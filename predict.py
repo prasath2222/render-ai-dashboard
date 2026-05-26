@@ -6,282 +6,400 @@ import ta
 
 from telegram_alert import send_alert
 
-# ==========================================
-# LOAD FILES
-# ==========================================
-
-xgb_model = joblib.load(
-    "xgb_model.pkl"
-)
-
-xgb_reg = joblib.load(
-    "xgb_reg.pkl"
-)
-
-features = joblib.load(
-    "features.pkl"
-)
-
-# ==========================================
-# DOWNLOAD DATA
-# ==========================================
+# =========================================================
+# DOWNLOAD RENDER DATA
+# =========================================================
 
 df = yf.download(
-
-    "BTC-USD",
-
+    "RENDER-USD",
     interval="1h",
-
     period="90d",
-
-    auto_adjust=True,
-
-    progress=False
+    auto_adjust=True
 )
 
-if isinstance(df.columns, pd.MultiIndex):
+df = df.dropna()
 
-    df.columns = df.columns.get_level_values(0)
+# =========================================================
+# INDICATORS
+# =========================================================
 
-df.reset_index(inplace=True)
+df["EMA20"] = ta.trend.ema_indicator(
+    close=df["Close"],
+    window=20
+)
 
-# ==========================================
-# SERIES
-# ==========================================
+df["EMA50"] = ta.trend.ema_indicator(
+    close=df["Close"],
+    window=50
+)
+
+df["EMA200"] = ta.trend.ema_indicator(
+    close=df["Close"],
+    window=200
+)
+
+df["RSI"] = ta.momentum.rsi(
+    close=df["Close"],
+    window=14
+)
+
+macd = ta.trend.MACD(
+    close=df["Close"]
+)
+
+df["MACD"] = macd.macd()
+
+df["MACD_SIGNAL"] = macd.macd_signal()
+
+df["MACD_HIST"] = macd.macd_diff()
+
+df["ADX"] = ta.trend.adx(
+    high=df["High"],
+    low=df["Low"],
+    close=df["Close"],
+    window=14
+)
+
+df["ATR"] = ta.volatility.average_true_range(
+    high=df["High"],
+    low=df["Low"],
+    close=df["Close"],
+    window=14
+)
+
+bb = ta.volatility.BollingerBands(
+    close=df["Close"],
+    window=20,
+    window_dev=2
+)
+
+df["BB_UPPER"] = bb.bollinger_hband()
+
+df["BB_LOWER"] = bb.bollinger_lband()
+
+df["BB_MIDDLE"] = bb.bollinger_mavg()
+
+df["VOLUME_SMA"] = ta.trend.sma_indicator(
+    close=df["Volume"],
+    window=20
+)
+
+# =========================================================
+# CLEAN
+# =========================================================
+
+df = df.dropna()
+
+latest = df.iloc[-1]
 
 close = df["Close"]
 
-high = df["High"]
+# =========================================================
+# CURRENT VALUES
+# =========================================================
 
-low = df["Low"]
+current_price = float(latest["Close"])
 
-volume = df["Volume"]
+ema20 = float(latest["EMA20"])
+ema50 = float(latest["EMA50"])
+ema200 = float(latest["EMA200"])
 
-# ==========================================
-# INDICATORS
-# ==========================================
+rsi = float(latest["RSI"])
+
+macd_value = float(latest["MACD"])
+macd_signal = float(latest["MACD_SIGNAL"])
+macd_hist = float(latest["MACD_HIST"])
+
+adx = float(latest["ADX"])
+
+atr = float(latest["ATR"])
+
+bb_upper = float(latest["BB_UPPER"])
+bb_lower = float(latest["BB_LOWER"])
+
+volume = float(latest["Volume"])
+volume_sma = float(latest["VOLUME_SMA"])
+
+# =========================================================
+# TREND SCORE
+# =========================================================
+
+trend_score = 0
+
+# EMA TREND
+
+if ema20 > ema50:
+    trend_score += 20
+else:
+    trend_score -= 20
+
+if ema50 > ema200:
+    trend_score += 20
+else:
+    trend_score -= 20
 
 # RSI
-df["rsi14"] = ta.momentum.RSIIndicator(
-    close=close,
-    window=14
-).rsi()
 
-df["rsi7"] = ta.momentum.RSIIndicator(
-    close=close,
-    window=7
-).rsi()
+if rsi >= 70:
+    trend_score -= 15
 
-# EMA
-df["ema20"] = ta.trend.EMAIndicator(
-    close=close,
-    window=20
-).ema_indicator()
+elif rsi >= 60:
+    trend_score += 15
 
-df["ema50"] = ta.trend.EMAIndicator(
-    close=close,
-    window=50
-).ema_indicator()
+elif rsi <= 30:
+    trend_score += 20
 
-df["ema200"] = ta.trend.EMAIndicator(
-    close=close,
-    window=200
-).ema_indicator()
-
-# EMA FEATURES
-df["ema_cross"] = (
-    df["ema20"] - df["ema50"]
-)
-
-df["price_ema20"] = (
-    close - df["ema20"]
-) / df["ema20"]
-
-df["price_ema50"] = (
-    close - df["ema50"]
-) / df["ema50"]
+elif rsi <= 40:
+    trend_score -= 10
 
 # MACD
-macd = ta.trend.MACD(
-    close=close
-)
 
-df["macd"] = macd.macd()
-
-df["macd_signal"] = macd.macd_signal()
-
-df["macd_hist"] = macd.macd_diff()
-
-# BOLLINGER
-bb = ta.volatility.BollingerBands(
-    close=close
-)
-
-df["bb_high"] = bb.bollinger_hband()
-
-df["bb_low"] = bb.bollinger_lband()
-
-df["bb_position"] = (
-    close - df["bb_low"]
-) / (
-    df["bb_high"] - df["bb_low"] + 1e-9
-)
-
-# ATR
-df["atr"] = ta.volatility.AverageTrueRange(
-    high=high,
-    low=low,
-    close=close
-).average_true_range()
-
-df["atr_pct"] = (
-    df["atr"] / close
-)
+if macd_value > macd_signal:
+    trend_score += 20
+else:
+    trend_score -= 20
 
 # ADX
-adx = ta.trend.ADXIndicator(
-    high=high,
-    low=low,
-    close=close
-)
 
-df["adx"] = adx.adx()
-
-df["di_diff"] = (
-    adx.adx_pos() - adx.adx_neg()
-)
-
-# RETURNS
-df["returns_1h"] = (
-    close.pct_change()
-)
-
-df["returns_4h"] = (
-    close.pct_change(4)
-)
-
-df["returns_24h"] = (
-    close.pct_change(24)
-)
+if adx > 25:
+    trend_score += 10
 
 # MOMENTUM
-df["mom5"] = (
-    close / close.shift(5)
-) - 1
 
-df["mom10"] = (
-    close / close.shift(10)
-) - 1
+price_change_10 = (
+    (close.iloc[-1] - close.iloc[-10])
+    / close.iloc[-10]
+) * 100
+
+if price_change_10 > 0:
+    trend_score += 10
+else:
+    trend_score -= 10
 
 # VOLUME
-df["vol_ma20"] = (
-    volume
-    .rolling(20)
-    .mean()
-)
 
-df["vol_ratio"] = (
-    volume / df["vol_ma20"]
-)
+if volume > volume_sma:
+    trend_score += 5
 
-# VOLATILITY
-df["volatility"] = (
-    df["returns_1h"]
-    .rolling(24)
-    .std()
-)
+# =========================================================
+# SIGNAL
+# =========================================================
 
-# PLACEHOLDER FEATURES
-df["btc_returns"] = 0
+if trend_score >= 40:
+    signal = "BUY"
+    signal_color = "#00ff88"
 
-df["btc_vol_ratio"] = 1
+elif trend_score <= -40:
+    signal = "SELL"
+    signal_color = "#ff4d6d"
 
-df["coin_vs_btc"] = 0
+else:
+    signal = "HOLD"
+    signal_color = "#ffaa00"
 
-df["fng"] = 50
+# =========================================================
+# CONFIDENCE
+# =========================================================
 
-# ==========================================
-# CLEAN
-# ==========================================
-
-df.dropna(inplace=True)
-
-# ==========================================
-# FINAL INPUT
-# ==========================================
-
-latest = df[features].iloc[[-1]]
-
-# ==========================================
-# PREDICTIONS
-# ==========================================
-
-prob = xgb_model.predict_proba(
-    latest
-)[0][1]
-
-future_price = xgb_reg.predict(
-    latest
-)[0]
-
-current_price = close.iloc[-1]
-
-change_pct = (
-    (
-        future_price - current_price
+confidence = min(
+    95,
+    max(
+        50,
+        abs(trend_score)
     )
+)
+
+# =========================================================
+# PREDICTION ENGINE
+# =========================================================
+
+volatility = atr / current_price
+
+prediction_strength = trend_score / 100
+
+prediction_move = (
+    prediction_strength
+    * volatility
+    * 5
+)
+
+predicted_price = current_price * (
+    1 + prediction_move
+)
+
+predicted_change = (
+    (predicted_price - current_price)
     / current_price
 ) * 100
 
-# ==========================================
-# SIGNAL
-# ==========================================
+# =========================================================
+# SUPPORT / RESISTANCE
+# =========================================================
 
-if prob > 0.58:
+support_1 = float(
+    df["Low"].tail(50).min()
+)
 
-    signal = "BUY"
+resistance_1 = float(
+    df["High"].tail(50).max()
+)
 
-elif prob < 0.42:
+support_2 = support_1 - atr
 
-    signal = "SELL"
+resistance_2 = resistance_1 + atr
+
+# =========================================================
+# MARKET REGIME
+# =========================================================
+
+if ema20 > ema50 and rsi > 55:
+    market_regime = "BULLISH"
+
+elif ema20 < ema50 and rsi < 45:
+    market_regime = "BEARISH"
+
+else:
+    market_regime = "SIDEWAYS"
+
+# =========================================================
+# TRADING SETUP
+# =========================================================
+
+entry_price = current_price
+
+stop_loss = current_price - (
+    atr * 2
+)
+
+take_profit_1 = current_price + (
+    atr * 3
+)
+
+take_profit_2 = current_price + (
+    atr * 6
+)
+
+risk_reward = (
+    (take_profit_1 - entry_price)
+    /
+    (entry_price - stop_loss)
+)
+
+# =========================================================
+# BUY / SELL PRESSURE
+# =========================================================
+
+buy_pressure = max(
+    0,
+    min(
+        100,
+        50 + trend_score
+    )
+)
+
+sell_pressure = 100 - buy_pressure
+
+# =========================================================
+# MULTI TIMEFRAME SIGNALS
+# =========================================================
+
+if signal == "BUY":
+
+    signal_15m = "BUY"
+    signal_1h = "BUY"
+    signal_4h = "BUY"
+    signal_1d = "BUY"
+
+elif signal == "SELL":
+
+    signal_15m = "SELL"
+    signal_1h = "SELL"
+    signal_4h = "SELL"
+    signal_1d = "SELL"
 
 else:
 
-    signal = "HOLD"
+    signal_15m = "HOLD"
+    signal_1h = "HOLD"
+    signal_4h = "HOLD"
+    signal_1d = "HOLD"
 
-# ==========================================
+# =========================================================
 # OUTPUT
-# ==========================================
+# =========================================================
 
-print("\n==========================")
+print("\n=================================================")
+print("RNDR AI PREDICTION")
+print("=================================================\n")
 
-print("LIVE AI PREDICTION")
+print("CURRENT PRICE :", round(current_price, 4))
+print("PREDICTED PRICE :", round(predicted_price, 4))
+print("PREDICTED CHANGE :", round(predicted_change, 2), "%")
 
-print("==========================")
+print("\nSIGNAL :", signal)
+print("CONFIDENCE :", confidence, "%")
 
-print(f"Signal      : {signal}")
+print("\nMARKET REGIME :", market_regime)
 
-print(f"Probability : {prob:.4f}")
+print("\nRSI :", round(rsi, 2))
+print("MACD :", round(macd_value, 4))
+print("ADX :", round(adx, 2))
+print("ATR :", round(atr, 4))
 
-print(f"Confidence  : {prob*100:.2f}%")
+print("\nSUPPORT 1 :", round(support_1, 4))
+print("SUPPORT 2 :", round(support_2, 4))
 
-print(f"Current     : {current_price:.2f}")
+print("\nRESISTANCE 1 :", round(resistance_1, 4))
+print("RESISTANCE 2 :", round(resistance_2, 4))
 
-print(f"Forecast    : {future_price:.2f}")
+print("\nENTRY :", round(entry_price, 4))
+print("STOP LOSS :", round(stop_loss, 4))
 
-print(f"Change %    : {change_pct:+.2f}%")
+print("TAKE PROFIT 1 :", round(take_profit_1, 4))
+print("TAKE PROFIT 2 :", round(take_profit_2, 4))
 
-# ==========================================
+print("\nRISK / REWARD :", round(risk_reward, 2))
+
+print("\nBUY PRESSURE :", round(buy_pressure, 2), "%")
+print("SELL PRESSURE :", round(sell_pressure, 2), "%")
+
+print("\nMULTI TIMEFRAME")
+
+print("15M :", signal_15m)
+print("1H :", signal_1h)
+print("4H :", signal_4h)
+print("1D :", signal_1d)
+
+print("\n=================================================\n")
+
+# =========================================================
 # TELEGRAM ALERT
-# ==========================================
+# =========================================================
 
-send_alert(
+message = f"""
+🚀 RNDR AI SIGNAL
 
-    coin="BTC",
+💰 Price: ${current_price:.4f}
 
-    signal=signal,
+📈 Signal: {signal}
 
-    confidence=prob * 100,
+🎯 Confidence: {confidence}%
 
-    price=current_price
-)
+🔮 Predicted: ${predicted_price:.4f}
+
+📊 Change: {predicted_change:.2f}%
+
+📌 RSI: {rsi:.2f}
+
+📌 ADX: {adx:.2f}
+
+📌 Market: {market_regime}
+
+🟢 TP1: ${take_profit_1:.4f}
+
+🟢 TP2: ${take_profit_2:.4f}
+
+🔴 SL: ${stop_loss:.4f}
+"""
+
+send_alert(message)
