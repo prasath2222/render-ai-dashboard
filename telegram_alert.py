@@ -16,7 +16,7 @@ import requests
 # REPLACE THESE
 # =========================================================
 
-BOT_TOKEN = "8819680977:AAG3ed3_51lx5vJ4d9Ou0DBq1S8mvd2-rag"
+BOT_TOKEN = "8819680977:AAHfAT4IOAa4zop6LpxREQMPaXujpPj2H1w"
 
 CHAT_ID = "6941184785"
 
