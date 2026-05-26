@@ -1,9 +1,11 @@
 streamlit
-yfinance
 pandas
 numpy
-ta
-scikit-learn
-joblib
 plotly
-streamlit-autorefresh
+scikit-learn
+xgboost
+lightgbm
+joblib
+requests
+ta
+yfinance
