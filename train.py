@@ -256,25 +256,25 @@ y_reg = df["TargetPrice"]
 # ==========================================
 
 rf_classifier = RandomForestClassifier(
-    n_estimators=300,
-    max_depth=12,
+    n_estimators=80,
+    max_depth=8,
     random_state=42
 )
 
 gb_classifier = GradientBoostingClassifier(
-    n_estimators=200,
+    n_estimators=120,
     learning_rate=0.05,
     random_state=42
 )
 
 rf_regressor = RandomForestRegressor(
-    n_estimators=300,
-    max_depth=12,
+    n_estimators=80,
+    max_depth=8,
     random_state=42
 )
 
 gb_regressor = GradientBoostingRegressor(
-    n_estimators=200,
+    n_estimators=120,
     learning_rate=0.05,
     random_state=42
 )
