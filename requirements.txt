@@ -5,3 +5,4 @@ numpy
 ta
 scikit-learn
 joblib
+plotly
