@@ -1,566 +1,554 @@
+# =========================================================
+# RNDR AI DASHBOARD
+# FULL FIXED APP.PY
+# =========================================================
+
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
+import yfinance as yf
 import ta
 import joblib
 
+from plotly import graph_objects as go
+
 # =========================================================
-# PAGE
+# PAGE CONFIG
 # =========================================================
 
 st.set_page_config(
-
     page_title="RNDR AI Dashboard",
-
     layout="wide"
-
 )
 
 # =========================================================
-# STYLE
+# LOAD MODELS
 # =========================================================
 
-st.markdown("""
-
-<style>
-
-html, body, [class*="css"] {
-
-    background-color: #050816;
-    color: white;
-
-}
-
-.main-title {
-
-    font-size: 52px;
-    font-weight: 800;
-    margin-bottom: 10px;
-
-}
-
-.sub-title {
-
-    color: #94a3b8;
-    font-size: 20px;
-    margin-bottom: 40px;
-
-}
-
-.metric-card {
-
-    background: #111827;
-    padding: 25px;
-    border-radius: 18px;
-    border: 1px solid #1e293b;
-
-}
-
-.metric-title {
-
-    font-size: 18px;
-    color: #94a3b8;
-
-}
-
-.metric-value {
-
-    font-size: 38px;
-    font-weight: bold;
-    margin-top: 10px;
-
-}
-
-.signal-box {
-
-    padding: 35px;
-    border-radius: 20px;
-    text-align: center;
-    margin-top: 30px;
-
-}
-
-</style>
-
-""", unsafe_allow_html=True)
+classifier = joblib.load("rf_classifier.pkl")
+regressor = joblib.load("rf_regressor.pkl")
 
 # =========================================================
-# LOAD MODEL
+# CUSTOM CSS
 # =========================================================
 
-classifier = joblib.load(
+st.markdown(
+    """
+    <style>
 
-    "rf_classifier.pkl"
+    .stApp{
+        background-color:#050816;
+        color:white;
+    }
 
-)
+    .main-title{
+        font-size:60px;
+        font-weight:900;
+        color:white;
+        margin-bottom:10px;
+    }
 
-regressor = joblib.load(
+    .sub{
+        color:#9ca3af;
+        font-size:22px;
+        margin-bottom:40px;
+    }
 
-    "rf_regressor.pkl"
+    .card{
+        background:#111827;
+        padding:30px;
+        border-radius:20px;
+        border:1px solid #1f2937;
+    }
 
-)
+    .metric-title{
+        color:#9ca3af;
+        font-size:18px;
+    }
 
-features = joblib.load(
+    .metric-value{
+        color:white;
+        font-size:42px;
+        font-weight:800;
+    }
 
-    "features.pkl"
+    .buy{
+        color:#00ff99;
+        font-weight:900;
+    }
 
+    .sell{
+        color:#ff4d4d;
+        font-weight:900;
+    }
+
+    .sideways{
+        color:#ffaa00;
+        font-weight:900;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 # =========================================================
-# DOWNLOAD RNDR
+# DOWNLOAD DATA
 # =========================================================
 
 df = yf.download(
-
-    "RENDER-USD",
-
-    period="60d",
-
-    interval="1h",
-
-    auto_adjust=True
-
+    "RNDR-USD",
+    period="90d",
+    interval="1h"
 )
 
-btc = yf.download(
+df.dropna(inplace=True)
 
-    "BTC-USD",
+# =========================================================
+# INR PRICE
+# =========================================================
 
-    period="60d",
-
-    interval="1h",
-
-    auto_adjust=True
-
+usd_inr = yf.download(
+    "INR=X",
+    period="1d",
+    interval="1d"
 )
 
-# =========================================================
-# FIX COLUMNS
-# =========================================================
-
-if isinstance(df.columns, pd.MultiIndex):
-
-    df.columns = df.columns.get_level_values(0)
-
-if isinstance(btc.columns, pd.MultiIndex):
-
-    btc.columns = btc.columns.get_level_values(0)
+usd_inr_rate = float(usd_inr["Close"].iloc[-1])
 
 # =========================================================
-# FEATURES
+# INDICATORS
 # =========================================================
 
-df["BTC_Close"] = btc["Close"]
+df["EMA20"] = ta.trend.ema_indicator(
+    df["Close"],
+    window=20
+)
 
-df["BTC_Return"] = df["BTC_Close"].pct_change()
+df["EMA50"] = ta.trend.ema_indicator(
+    df["Close"],
+    window=50
+)
 
-df["RSI"] = ta.momentum.RSIIndicator(
+df["EMA200"] = ta.trend.ema_indicator(
+    df["Close"],
+    window=200
+)
 
-    close=df["Close"],
+df["SMA20"] = ta.trend.sma_indicator(
+    df["Close"],
+    window=20
+)
 
+df["RSI"] = ta.momentum.rsi(
+    df["Close"],
     window=14
-
-).rsi()
-
-macd = ta.trend.MACD(
-
-    close=df["Close"]
-
 )
+
+macd = ta.trend.MACD(df["Close"])
 
 df["MACD"] = macd.macd()
 
 df["MACD_SIGNAL"] = macd.macd_signal()
 
-df["EMA20"] = ta.trend.EMAIndicator(
+df["MACD_DIFF"] = macd.macd_diff()
 
-    close=df["Close"],
+bb = ta.volatility.BollingerBands(df["Close"])
 
-    window=20
+df["BB_HIGH"] = bb.bollinger_hband()
 
-).ema_indicator()
+df["BB_LOW"] = bb.bollinger_lband()
 
-df["EMA50"] = ta.trend.EMAIndicator(
+df["BB_WIDTH"] = bb.bollinger_wband()
 
-    close=df["Close"],
-
-    window=50
-
-).ema_indicator()
-
-df["ATR"] = ta.volatility.AverageTrueRange(
-
+stoch = ta.momentum.StochasticOscillator(
     high=df["High"],
-
     low=df["Low"],
+    close=df["Close"]
+)
 
-    close=df["Close"],
+df["STOCH"] = stoch.stoch()
 
-    window=14
+df["STOCH_SIGNAL"] = stoch.stoch_signal()
 
-).average_true_range()
+df["ATR"] = ta.volatility.average_true_range(
+    df["High"],
+    df["Low"],
+    df["Close"]
+)
 
 df["Returns"] = df["Close"].pct_change()
 
-df["Volatility"] = df["Returns"].rolling(24).std()
+df["Volatility"] = (
+    df["Returns"]
+    .rolling(24)
+    .std()
+)
 
-df["Momentum5"] = df["Close"] - df["Close"].shift(5)
+df["Volume_Change"] = (
+    df["Volume"]
+    .pct_change()
+)
 
-df["Momentum10"] = df["Close"] - df["Close"].shift(10)
+df["Trend"] = np.where(
+    df["EMA20"] > df["EMA50"],
+    1,
+    0
+)
+
+df["Breakout"] = np.where(
+    df["Close"] > df["BB_HIGH"],
+    1,
+    0
+)
+
+df["Volume_Spike"] = np.where(
+    df["Volume"] >
+    df["Volume"].rolling(20).mean() * 1.5,
+    1,
+    0
+)
+
+df["Bull_Trend"] = np.where(
+    (df["EMA20"] > df["EMA50"]) &
+    (df["EMA50"] > df["EMA200"]),
+    1,
+    0
+)
 
 df.dropna(inplace=True)
 
 # =========================================================
-# PREDICT
+# FEATURES
+# =========================================================
+
+features = [
+
+    "Close",
+    "Volume",
+
+    "RSI",
+
+    "MACD",
+    "MACD_SIGNAL",
+    "MACD_DIFF",
+
+    "EMA20",
+    "EMA50",
+    "EMA200",
+
+    "SMA20",
+
+    "BB_HIGH",
+    "BB_LOW",
+    "BB_WIDTH",
+
+    "ATR",
+
+    "STOCH",
+    "STOCH_SIGNAL",
+
+    "Returns",
+    "Volatility",
+    "Volume_Change",
+
+    "Trend",
+    "Breakout",
+    "Volume_Spike",
+    "Bull_Trend"
+
+]
+
+# =========================================================
+# PREDICTION
 # =========================================================
 
 latest = df[features].iloc[-1:]
 
-prediction = classifier.predict(latest)[0]
+predicted_price = regressor.predict(latest)[0]
 
-future_price = regressor.predict(latest)[0]
+signal_prob = classifier.predict_proba(latest)[0]
 
-confidence = np.max(
+confidence = np.max(signal_prob) * 100
 
-    classifier.predict_proba(latest)
-
-) * 100
-
-# =========================================================
-# PRICE
-# =========================================================
-
-current_price = float(
-
-    df["Close"].iloc[-1]
-
-)
-
-previous_price = float(
-
-    df["Close"].iloc[-24]
-
-)
-
-change_percent = (
-
-    (current_price - previous_price)
-
-    / previous_price
-
-) * 100
-
-usd_inr = 85.20
-
-price_inr = current_price * usd_inr
+signal_class = classifier.predict(latest)[0]
 
 # =========================================================
 # SIGNAL
 # =========================================================
 
-if prediction == 2:
-
+if signal_class == 2:
     signal = "BULLISH 🚀"
+    signal_classname = "buy"
 
-    signal_color = "#00ff88"
-
-elif prediction == 0:
-
-    signal = "BEARISH 🔻"
-
-    signal_color = "#ff4d4d"
+elif signal_class == 1:
+    signal = "SIDEWAYS ⚪"
+    signal_classname = "sideways"
 
 else:
-
-    signal = "SIDEWAYS ➖"
-
-    signal_color = "#facc15"
+    signal = "BEARISH 🔻"
+    signal_classname = "sell"
 
 # =========================================================
-# SUPPORT RESISTANCE
+# LIVE PRICE
 # =========================================================
 
-support = df["Low"].rolling(50).min().iloc[-1]
+current_price = float(df["Close"].iloc[-1])
 
-resistance = df["High"].rolling(50).max().iloc[-1]
+previous_price = float(df["Close"].iloc[-2])
+
+change_percent = (
+    (current_price - previous_price)
+    / previous_price
+) * 100
+
+price_inr = current_price * usd_inr_rate
 
 # =========================================================
 # TITLE
 # =========================================================
 
 st.markdown(
-
     """
-
-    <div class="main-title">
-
+    <div class='main-title'>
     RNDR AI Trading Dashboard
-
     </div>
-
-    <div class="sub-title">
-
-    Live AI Prediction • Trading Setup • Technical Analysis
-
-    </div>
-
     """,
-
     unsafe_allow_html=True
+)
 
+st.markdown(
+    """
+    <div class='sub'>
+    Live AI Market Analysis • Trading Setup • Technical Indicators
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
 # =========================================================
 # METRICS
 # =========================================================
 
-c1, c2, c3, c4 = st.columns(4)
+col1, col2, col3, col4 = st.columns(4)
 
-with c1:
+with col1:
 
-    st.markdown(f"""
+    st.markdown(
+        f"""
+        <div class='card'>
+            <div class='metric-title'>
+            RNDR Price USD
+            </div>
 
-    <div class="metric-card">
-
-        <div class="metric-title">
-
-        RNDR/USD
-
+            <div class='metric-value'>
+            ${current_price:.4f}
+            </div>
         </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-        <div class="metric-value">
+with col2:
 
-        ${current_price:.4f}
+    st.markdown(
+        f"""
+        <div class='card'>
+            <div class='metric-title'>
+            RNDR Price INR
+            </div>
 
+            <div class='metric-value'>
+            ₹{price_inr:.2f}
+            </div>
         </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-    </div>
+with col3:
 
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class='card'>
+            <div class='metric-title'>
+            AI Predicted Price
+            </div>
 
-with c2:
-
-    st.markdown(f"""
-
-    <div class="metric-card">
-
-        <div class="metric-title">
-
-        RNDR/INR
-
+            <div class='metric-value'>
+            ${predicted_price:.4f}
+            </div>
         </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-        <div class="metric-value">
+with col4:
 
-        ₹{price_inr:.2f}
+    st.markdown(
+        f"""
+        <div class='card'>
+            <div class='metric-title'>
+            Confidence
+            </div>
 
+            <div class='metric-value'>
+            {confidence:.2f}%
+            </div>
         </div>
-
-    </div>
-
-    """, unsafe_allow_html=True)
-
-with c3:
-
-    color = "#00ff88" if change_percent > 0 else "#ff4d4d"
-
-    st.markdown(f"""
-
-    <div class="metric-card">
-
-        <div class="metric-title">
-
-        24H Change
-
-        </div>
-
-        <div class="metric-value" style="color:{color};">
-
-        {change_percent:.2f}%
-
-        </div>
-
-    </div>
-
-    """, unsafe_allow_html=True)
-
-with c4:
-
-    st.markdown(f"""
-
-    <div class="metric-card">
-
-        <div class="metric-title">
-
-        Confidence
-
-        </div>
-
-        <div class="metric-value">
-
-        {confidence:.2f}%
-
-        </div>
-
-    </div>
-
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True
+    )
 
 # =========================================================
 # SIGNAL BOX
 # =========================================================
 
-st.markdown(f"""
+st.markdown("<br>", unsafe_allow_html=True)
 
-<div class="signal-box"
+st.markdown(
+    f"""
+    <div class='card'>
 
-style="
+        <div class='metric-title'>
+        AI Trading Signal
+        </div>
 
-background:#111827;
+        <div class='metric-value {signal_classname}'>
+        {signal}
+        </div>
 
-border:2px solid {signal_color};
+        <br>
 
-">
+        <div style='font-size:22px;color:white;'>
 
-<h1 style="
+        Live Change :
+        {change_percent:.2f}%
 
-font-size:64px;
+        </div>
 
-color:{signal_color};
-
-">
-
-{signal}
-
-</h1>
-
-<h2 style="
-
-font-size:32px;
-
-margin-top:20px;
-
-">
-
-Predicted Price :
-
-${future_price:.4f}
-
-</h2>
-
-</div>
-
-""", unsafe_allow_html=True)
-
-# =========================================================
-# TRADING SETUP
-# =========================================================
-
-st.markdown("## Trading Setup")
-
-t1, t2, t3, t4 = st.columns(4)
-
-t1.metric(
-
-    "Support",
-
-    f"${support:.4f}"
-
-)
-
-t2.metric(
-
-    "Resistance",
-
-    f"${resistance:.4f}"
-
-)
-
-t3.metric(
-
-    "RSI",
-
-    f"{df['RSI'].iloc[-1]:.2f}"
-
-)
-
-t4.metric(
-
-    "MACD",
-
-    f"{df['MACD'].iloc[-1]:.4f}"
-
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
 # =========================================================
 # TRADINGVIEW CHART
 # =========================================================
 
-st.markdown("## Live TradingView Chart")
+st.markdown("<br>", unsafe_allow_html=True)
+
+st.subheader("RNDR Live TradingView Chart")
 
 tradingview_widget = """
-
 <!-- TradingView Widget BEGIN -->
-
 <div class="tradingview-widget-container">
-
   <div id="tradingview_chart"></div>
 
   <script type="text/javascript"
-
-  src="https://s3.tradingview.com/tv.js">
-
-  </script>
+  src="https://s3.tradingview.com/tv.js"></script>
 
   <script type="text/javascript">
 
   new TradingView.widget(
-
   {
-
   "width": "100%",
-
   "height": 700,
-
-  "symbol": "BINANCE:RENDERUSDT",
-
+  "symbol": "BINANCE:RNDRUSDT",
   "interval": "60",
-
   "timezone": "Asia/Kolkata",
-
   "theme": "dark",
-
   "style": "1",
-
   "locale": "en",
-
   "toolbar_bg": "#111827",
-
   "enable_publishing": false,
-
   "hide_side_toolbar": false,
-
   "allow_symbol_change": true,
-
   "container_id": "tradingview_chart"
-
 }
-
   );
 
   </script>
 
 </div>
-
 <!-- TradingView Widget END -->
-
 """
 
 st.components.v1.html(
-
     tradingview_widget,
-
     height=720
+)
 
+# =========================================================
+# INDICATORS
+# =========================================================
+
+st.subheader("Technical Indicators")
+
+c1, c2, c3, c4 = st.columns(4)
+
+c1.metric(
+    "RSI",
+    round(float(df["RSI"].iloc[-1]), 2)
+)
+
+c2.metric(
+    "MACD",
+    round(float(df["MACD"].iloc[-1]), 4)
+)
+
+c3.metric(
+    "ATR",
+    round(float(df["ATR"].iloc[-1]), 4)
+)
+
+c4.metric(
+    "Volatility",
+    round(float(df["Volatility"].iloc[-1]), 4)
+)
+
+# =========================================================
+# PLOTLY CHART
+# =========================================================
+
+fig = go.Figure()
+
+fig.add_trace(
+    go.Candlestick(
+        x=df.index,
+
+        open=df["Open"],
+        high=df["High"],
+        low=df["Low"],
+        close=df["Close"],
+
+        name="RNDR"
+    )
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=df.index,
+        y=df["EMA20"],
+        name="EMA20"
+    )
+)
+
+fig.add_trace(
+    go.Scatter(
+        x=df.index,
+        y=df["EMA50"],
+        name="EMA50"
+    )
+)
+
+fig.update_layout(
+    template="plotly_dark",
+    height=700,
+    xaxis_rangeslider_visible=False
+)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
 )
