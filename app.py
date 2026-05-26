@@ -1,763 +1,449 @@
-# =========================================================
-# ULTRA ADVANCED AI CRYPTO DASHBOARD
-# =========================================================
-# INSTALL:
-#
-# pip install streamlit plotly yfinance pandas numpy \
-# ta joblib requests streamlit-autorefresh
-#
-# RUN:
-#
-# streamlit run app.py
-# =========================================================
+# app.py
+# ADVANCED RENDER AI DASHBOARD
+# STREAMLIT + TRADINGVIEW STYLE UI
 
+import streamlit as st
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from ta.trend import EMAIndicator, MACD, ADXIndicator
+from ta.momentum import RSIIndicator, StochasticOscillator
+from ta.volatility import AverageTrueRange, BollingerBands
+from ta.volume import OnBalanceVolumeIndicator
 import warnings
 warnings.filterwarnings("ignore")
 
-import streamlit as st
-from streamlit_autorefresh import st_autorefresh
-
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-
-import yfinance as yf
-import pandas as pd
-import numpy as np
-import ta
-import joblib
-import requests
-
-# =========================================================
+# ==========================================
 # PAGE CONFIG
-# =========================================================
+# ==========================================
 
 st.set_page_config(
-    page_title="AI Crypto Dashboard",
+    page_title="RNDR AI Dashboard",
     layout="wide",
     page_icon="🚀"
 )
 
-# =========================================================
-# AUTO REFRESH
-# =========================================================
-
-st_autorefresh(
-    interval=60000,
-    key="refresh"
-)
-
-# =========================================================
-# CUSTOM CSS
-# =========================================================
+# ==========================================
+# CSS
+# ==========================================
 
 st.markdown("""
 <style>
 
-html, body, [class*="css"]  {
-    background-color: #050816;
-    color: white;
+html, body, [class*="css"]{
+    background-color:#060b16;
+    color:white;
+    font-family:Arial;
 }
 
-.main {
-    background-color: #050816;
+.main{
+    background:#060b16;
 }
 
-.block-container {
-    padding-top: 1rem;
-    padding-bottom: 1rem;
+.block-container{
+    padding-top:1rem;
 }
 
-.metric-card {
-    background: linear-gradient(
-        145deg,
-        #0d1326,
-        #111a33
-    );
-
-    padding: 20px;
-
-    border-radius: 18px;
-
-    border: 1px solid rgba(0,255,255,0.15);
-
-    box-shadow:
-        0 0 20px rgba(0,255,255,0.08);
-
-    text-align: center;
+.metric-card{
+    background:linear-gradient(145deg,#0d1529,#08101f);
+    border:1px solid #14304d;
+    border-radius:18px;
+    padding:18px;
+    box-shadow:0 0 20px rgba(0,255,255,0.08);
 }
 
-.section-card {
-
-    background: linear-gradient(
-        145deg,
-        #0c1224,
-        #10182e
-    );
-
-    padding: 20px;
-
-    border-radius: 20px;
-
-    border: 1px solid rgba(0,255,255,0.12);
-
-    box-shadow:
-        0 0 25px rgba(0,255,255,0.05);
-
-    margin-bottom: 20px;
+.big-title{
+    font-size:48px;
+    font-weight:800;
+    color:white;
 }
 
-.green {
-    color: #00ff88;
+.green{
+    color:#00ff88;
+    font-weight:bold;
 }
 
-.red {
-    color: #ff4d6d;
+.red{
+    color:#ff4d6d;
+    font-weight:bold;
 }
 
-.orange {
-    color: #ffaa00;
+.purple{
+    color:#bb86fc;
+    font-weight:bold;
 }
 
-.title-text {
-
-    font-size: 42px;
-
-    font-weight: 800;
-
-    color: white;
-}
-
-.small-text {
-
-    color: #9ca3af;
-
-    font-size: 14px;
+.section-title{
+    font-size:30px;
+    font-weight:700;
+    margin-top:10px;
+    margin-bottom:15px;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# =========================================================
-# HEADER
-# =========================================================
-
-st.markdown("""
-<div class="title-text">
-🚀 AI CRYPTO TRADING DASHBOARD
-</div>
-""", unsafe_allow_html=True)
-
-# =========================================================
-# LOAD MODELS
-# =========================================================
-
-xgb_model = joblib.load(
-    "xgb_model.pkl"
-)
-
-xgb_reg = joblib.load(
-    "xgb_reg.pkl"
-)
-
-features = joblib.load(
-    "features.pkl"
-)
-
-# =========================================================
+# ==========================================
 # SIDEBAR
-# =========================================================
+# ==========================================
 
 st.sidebar.title("⚙ SETTINGS")
 
-ticker = st.sidebar.selectbox(
-    "Coin",
-    [
-        "BTC-USD",
-        "ETH-USD",
-        "SOL-USD",
-        "RENDER-USD",
-        "DOGE-USD"
-    ]
-)
-
 interval = st.sidebar.selectbox(
     "Interval",
-    [
-        "15m",
-        "1h",
-        "4h",
-        "1d"
-    ]
+    ["15m","1h","4h","1d"],
+    index=1
 )
 
 period = st.sidebar.selectbox(
     "Period",
-    [
-        "30d",
-        "90d",
-        "180d",
-        "365d"
-    ]
+    ["7d","30d","90d","180d"],
+    index=1
 )
 
-# =========================================================
-# DOWNLOAD DATA
-# =========================================================
+# ==========================================
+# DATA
+# ==========================================
+
+ticker = "RENDER-USD"
 
 df = yf.download(
     ticker,
-    interval=interval,
     period=period,
-    auto_adjust=True,
-    progress=False
+    interval=interval,
+    auto_adjust=True
 )
-
-if isinstance(df.columns, pd.MultiIndex):
-
-    df.columns = df.columns.get_level_values(0)
-
-df.reset_index(inplace=True)
-
-# =========================================================
-# SERIES
-# =========================================================
-
-close = df["Close"]
-
-high = df["High"]
-
-low = df["Low"]
-
-volume = df["Volume"]
-
-# =========================================================
-# INDICATORS
-# =========================================================
-
-# RSI
-df["rsi14"] = ta.momentum.RSIIndicator(
-    close=close,
-    window=14
-).rsi()
-
-# EMA
-df["ema20"] = ta.trend.EMAIndicator(
-    close=close,
-    window=20
-).ema_indicator()
-
-df["ema50"] = ta.trend.EMAIndicator(
-    close=close,
-    window=50
-).ema_indicator()
-
-df["ema200"] = ta.trend.EMAIndicator(
-    close=close,
-    window=200
-).ema_indicator()
-
-# MACD
-macd = ta.trend.MACD(
-    close=close
-)
-
-df["macd"] = macd.macd()
-
-df["macd_signal"] = macd.macd_signal()
-
-df["macd_hist"] = macd.macd_diff()
-
-# BB
-bb = ta.volatility.BollingerBands(
-    close=close
-)
-
-df["bb_high"] = bb.bollinger_hband()
-
-df["bb_low"] = bb.bollinger_lband()
-
-df["bb_position"] = (
-    close - df["bb_low"]
-) / (
-    df["bb_high"] - df["bb_low"] + 1e-9
-)
-
-# ATR
-df["atr"] = ta.volatility.AverageTrueRange(
-    high=high,
-    low=low,
-    close=close
-).average_true_range()
-
-df["atr_pct"] = (
-    df["atr"] / close
-)
-
-# ADX
-adx = ta.trend.ADXIndicator(
-    high=high,
-    low=low,
-    close=close
-)
-
-df["adx"] = adx.adx()
-
-df["di_diff"] = (
-    adx.adx_pos() - adx.adx_neg()
-)
-
-# RETURNS
-df["returns_1h"] = close.pct_change()
-
-df["returns_24h"] = close.pct_change(24)
-
-# MOMENTUM
-df["mom5"] = (
-    close / close.shift(5)
-) - 1
-
-df["mom10"] = (
-    close / close.shift(10)
-) - 1
-
-# VOLUME
-df["vol_ma20"] = (
-    volume
-    .rolling(20)
-    .mean()
-)
-
-df["vol_ratio"] = (
-    volume / df["vol_ma20"]
-)
-
-# VOLATILITY
-df["volatility"] = (
-    df["returns_1h"]
-    .rolling(24)
-    .std()
-)
-
-# EXTRA FEATURES
-df["rsi7"] = df["rsi14"]
-
-df["ema_cross"] = (
-    df["ema20"] - df["ema50"]
-)
-
-df["price_ema20"] = (
-    close - df["ema20"]
-) / df["ema20"]
-
-df["price_ema50"] = (
-    close - df["ema50"]
-) / df["ema50"]
-
-df["returns_4h"] = (
-    close.pct_change(4)
-)
-
-df["btc_returns"] = 0
-
-df["btc_vol_ratio"] = 1
-
-df["coin_vs_btc"] = 0
-
-df["fng"] = 50
-
-# =========================================================
-# CLEAN
-# =========================================================
 
 df.dropna(inplace=True)
 
-# =========================================================
-# AI PREDICTION
-# =========================================================
+# ==========================================
+# INDICATORS
+# ==========================================
 
-latest = df[features].iloc[[-1]]
+close = df["Close"]
 
-prob = xgb_model.predict_proba(
-    latest
-)[0][1]
+df["EMA20"] = EMAIndicator(close, window=20).ema_indicator()
+df["EMA50"] = EMAIndicator(close, window=50).ema_indicator()
 
-future_price = xgb_reg.predict(
-    latest
-)[0]
+df["RSI"] = RSIIndicator(close).rsi()
 
-current_price = close.iloc[-1]
+macd = MACD(close)
+df["MACD"] = macd.macd()
+df["MACD_SIGNAL"] = macd.macd_signal()
 
-change_pct = (
-    (
-        future_price - current_price
-    )
-    / current_price
-) * 100
+adx = ADXIndicator(df["High"], df["Low"], close)
+df["ADX"] = adx.adx()
 
-# =========================================================
-# SIGNAL
-# =========================================================
+atr = AverageTrueRange(df["High"], df["Low"], close)
+df["ATR"] = atr.average_true_range()
 
-if prob > 0.58:
+bb = BollingerBands(close)
+df["BB_UPPER"] = bb.bollinger_hband()
+df["BB_LOWER"] = bb.bollinger_lband()
 
+stoch = StochasticOscillator(
+    df["High"],
+    df["Low"],
+    close
+)
+
+df["STOCH"] = stoch.stoch()
+
+obv = OnBalanceVolumeIndicator(close, df["Volume"])
+df["OBV"] = obv.on_balance_volume()
+
+latest = df.iloc[-1]
+
+# ==========================================
+# AI LOGIC
+# ==========================================
+
+score = 0
+
+if latest["EMA20"] > latest["EMA50"]:
+    score += 1
+
+if latest["RSI"] > 55:
+    score += 1
+
+if latest["MACD"] > latest["MACD_SIGNAL"]:
+    score += 1
+
+if latest["ADX"] > 20:
+    score += 1
+
+confidence = int((score / 4) * 100)
+
+if score >= 3:
     signal = "BUY"
-
     signal_color = "#00ff88"
-
-elif prob < 0.42:
-
+elif score == 2:
+    signal = "HOLD"
+    signal_color = "#ffaa00"
+else:
     signal = "SELL"
-
     signal_color = "#ff4d6d"
 
-else:
+# ==========================================
+# PREDICTION
+# ==========================================
 
-    signal = "HOLD"
+current_price = float(latest["Close"])
 
-    signal_color = "#ffaa00"
+predicted_price = current_price * (
+    1 + (
+        (latest["RSI"] - 50) / 500
+    )
+)
 
-# =========================================================
-# SUPPORT RESISTANCE
-# =========================================================
+change_24 = (
+    (close.iloc[-1] - close.iloc[-2])
+    / close.iloc[-2]
+) * 100
 
-support1 = df["Low"].rolling(50).min().iloc[-1]
+# ==========================================
+# HEADER
+# ==========================================
 
-support2 = df["Low"].rolling(100).min().iloc[-1]
+st.markdown("""
+<div class="big-title">
+🚀 RNDR / USDT AI DASHBOARD
+</div>
+""", unsafe_allow_html=True)
 
-resistance1 = df["High"].rolling(50).max().iloc[-1]
-
-resistance2 = df["High"].rolling(100).max().iloc[-1]
-
-# =========================================================
-# MARKET STRENGTH
-# =========================================================
-
-market_strength = int(prob * 100)
-
-# =========================================================
+# ==========================================
 # TOP METRICS
-# =========================================================
+# ==========================================
 
-c1, c2, c3, c4, c5 = st.columns(5)
+c1,c2,c3,c4,c5 = st.columns(5)
 
 with c1:
-
     st.markdown(f"""
     <div class="metric-card">
-
-    <h4>PRICE</h4>
-
-    <h1 class="green">
-    ${current_price:.2f}
-    </h1>
-
+    <h3>PRICE</h3>
+    <h1 class="green">${current_price:.3f}</h1>
     </div>
     """, unsafe_allow_html=True)
 
 with c2:
+    color = "#00ff88" if change_24 > 0 else "#ff4d6d"
 
     st.markdown(f"""
     <div class="metric-card">
-
-    <h4>24H CHANGE</h4>
-
-    <h1 class="green">
-    {change_pct:+.2f}%
+    <h3>24H CHANGE</h3>
+    <h1 style="color:{color}">
+    {change_24:.2f}%
     </h1>
-
     </div>
     """, unsafe_allow_html=True)
 
 with c3:
-
     st.markdown(f"""
     <div class="metric-card">
-
-    <h4>AI SIGNAL</h4>
-
+    <h3>AI SIGNAL</h3>
     <h1 style="color:{signal_color}">
     {signal}
     </h1>
-
     </div>
     """, unsafe_allow_html=True)
 
 with c4:
-
     st.markdown(f"""
     <div class="metric-card">
-
-    <h4>CONFIDENCE</h4>
-
-    <h1 class="green">
-    {prob*100:.2f}%
-    </h1>
-
+    <h3>CONFIDENCE</h3>
+    <h1 class="green">{confidence}%</h1>
     </div>
     """, unsafe_allow_html=True)
 
 with c5:
-
     st.markdown(f"""
     <div class="metric-card">
-
-    <h4>PREDICTED</h4>
-
-    <h1 style="color:#b266ff">
-    ${future_price:.2f}
+    <h3>PREDICTED</h3>
+    <h1 class="purple">
+    ${predicted_price:.3f}
     </h1>
-
     </div>
     """, unsafe_allow_html=True)
 
-# =========================================================
-# MAIN CHART
-# =========================================================
+# ==========================================
+# CHART
+# ==========================================
 
-st.markdown("## 📈 Price Chart")
+st.markdown("""
+<div class="section-title">
+📈 TradingView Style Chart
+</div>
+""", unsafe_allow_html=True)
 
 fig = go.Figure()
 
-fig.add_trace(
-    go.Scatter(
-        x=df.index,
-        y=df["Close"],
-        name="Price",
-        line=dict(
-            color="#00d4ff",
-            width=2
-        )
-    )
-)
+fig.add_trace(go.Candlestick(
+    x=df.index,
+    open=df["Open"],
+    high=df["High"],
+    low=df["Low"],
+    close=df["Close"],
+    name="Price"
+))
 
-fig.add_trace(
-    go.Scatter(
-        x=df.index,
-        y=df["ema20"],
-        name="EMA20",
-        line=dict(
-            color="#00ff88"
-        )
-    )
-)
+fig.add_trace(go.Scatter(
+    x=df.index,
+    y=df["EMA20"],
+    line=dict(color="#00ff99", width=2),
+    name="EMA20"
+))
 
-fig.add_trace(
-    go.Scatter(
-        x=df.index,
-        y=df["ema50"],
-        name="EMA50",
-        line=dict(
-            color="#ffaa00"
-        )
-    )
-)
-
-fig.add_hline(
-    y=support1,
-    line_color="green"
-)
-
-fig.add_hline(
-    y=resistance1,
-    line_color="red"
-)
+fig.add_trace(go.Scatter(
+    x=df.index,
+    y=df["EMA50"],
+    line=dict(color="#ffaa00", width=2),
+    name="EMA50"
+))
 
 fig.update_layout(
     template="plotly_dark",
-    height=650,
-    paper_bgcolor="#050816",
-    plot_bgcolor="#050816"
+    height=700,
+    paper_bgcolor="#060b16",
+    plot_bgcolor="#060b16",
+    xaxis_rangeslider_visible=False,
+    font=dict(color="white"),
 )
 
-st.plotly_chart(
-    fig,
-    use_container_width=True
-)
+st.plotly_chart(fig, use_container_width=True)
 
-# =========================================================
+# ==========================================
 # INDICATORS
-# =========================================================
+# ==========================================
 
-st.markdown("## 📊 Indicators")
+st.markdown("""
+<div class="section-title">
+📊 Indicators
+</div>
+""", unsafe_allow_html=True)
 
-i1, i2, i3, i4 = st.columns(4)
+i1,i2,i3,i4 = st.columns(4)
 
 with i1:
-
     st.markdown(f"""
-    <div class="section-card">
-
-    <h4>RSI</h4>
-
-    <h1 class="green">
-    {df['rsi14'].iloc[-1]:.2f}
-    </h1>
-
+    <div class="metric-card">
+    <h3>RSI</h3>
+    <h1>{latest["RSI"]:.2f}</h1>
     </div>
     """, unsafe_allow_html=True)
 
 with i2:
-
     st.markdown(f"""
-    <div class="section-card">
-
-    <h4>ADX</h4>
-
-    <h1 class="green">
-    {df['adx'].iloc[-1]:.2f}
-    </h1>
-
+    <div class="metric-card">
+    <h3>MACD</h3>
+    <h1>{latest["MACD"]:.3f}</h1>
     </div>
     """, unsafe_allow_html=True)
 
 with i3:
-
     st.markdown(f"""
-    <div class="section-card">
-
-    <h4>ATR %</h4>
-
-    <h1 class="green">
-    {df['atr_pct'].iloc[-1]*100:.2f}%
-    </h1>
-
+    <div class="metric-card">
+    <h3>ADX</h3>
+    <h1>{latest["ADX"]:.2f}</h1>
     </div>
     """, unsafe_allow_html=True)
 
 with i4:
-
     st.markdown(f"""
-    <div class="section-card">
-
-    <h4>VOL RATIO</h4>
-
-    <h1 class="green">
-    {df['vol_ratio'].iloc[-1]:.2f}
-    </h1>
-
+    <div class="metric-card">
+    <h3>ATR</h3>
+    <h1>{latest["ATR"]:.3f}</h1>
     </div>
     """, unsafe_allow_html=True)
 
-# =========================================================
+# ==========================================
 # SUPPORT RESISTANCE
-# =========================================================
-
-st.markdown("## 🧱 Support / Resistance")
-
-s1, s2, s3, s4 = st.columns(4)
-
-s1.metric(
-    "Support 1",
-    f"${support1:.2f}"
-)
-
-s2.metric(
-    "Support 2",
-    f"${support2:.2f}"
-)
-
-s3.metric(
-    "Resistance 1",
-    f"${resistance1:.2f}"
-)
-
-s4.metric(
-    "Resistance 2",
-    f"${resistance2:.2f}"
-)
-
-# =========================================================
-# MARKET REGIME
-# =========================================================
-
-st.markdown("## 🌍 Market Regime")
-
-r1, r2, r3, r4 = st.columns(4)
-
-trend = "Bullish" if signal == "BUY" else "Bearish"
-
-r1.metric(
-    "Trend",
-    trend
-)
-
-r2.metric(
-    "Strength",
-    market_strength
-)
-
-r3.metric(
-    "Volatility",
-    f"{df['volatility'].iloc[-1]*100:.2f}%"
-)
-
-r4.metric(
-    "Momentum",
-    f"{df['mom10'].iloc[-1]*100:.2f}%"
-)
-
-# =========================================================
-# TRADING SETUP
-# =========================================================
-
-entry = current_price
-
-sl = current_price - (
-    df["atr"].iloc[-1] * 2
-)
-
-tp1 = current_price + (
-    df["atr"].iloc[-1] * 3
-)
-
-tp2 = current_price + (
-    df["atr"].iloc[-1] * 6
-)
-
-st.markdown("## 🎯 Trading Setup")
-
-t1, t2, t3, t4 = st.columns(4)
-
-t1.metric(
-    "Entry",
-    f"${entry:.2f}"
-)
-
-t2.metric(
-    "Stop Loss",
-    f"${sl:.2f}"
-)
-
-t3.metric(
-    "Take Profit 1",
-    f"${tp1:.2f}"
-)
-
-t4.metric(
-    "Take Profit 2",
-    f"${tp2:.2f}"
-)
-
-# =========================================================
-# RAW DATA
-# =========================================================
-
-with st.expander("📄 Raw Data"):
-
-    st.dataframe(
-        df.tail(50)
-    )
-
-# =========================================================
-# FOOTER
-# =========================================================
+# ==========================================
 
 st.markdown("""
-<hr>
+<div class="section-title">
+🧱 Support / Resistance
+</div>
+""", unsafe_allow_html=True)
 
+support = df["Low"].tail(50).min()
+resistance = df["High"].tail(50).max()
+
+s1,s2 = st.columns(2)
+
+with s1:
+    st.markdown(f"""
+    <div class="metric-card">
+    <h2 style="color:#00ff88">
+    SUPPORT
+    </h2>
+    <h1>${support:.3f}</h1>
+    </div>
+    """, unsafe_allow_html=True)
+
+with s2:
+    st.markdown(f"""
+    <div class="metric-card">
+    <h2 style="color:#ff4d6d">
+    RESISTANCE
+    </h2>
+    <h1>${resistance:.3f}</h1>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ==========================================
+# MARKET REGIME
+# ==========================================
+
+st.markdown("""
+<div class="section-title">
+🌍 Market Regime
+</div>
+""", unsafe_allow_html=True)
+
+trend = "Bullish" if latest["EMA20"] > latest["EMA50"] else "Bearish"
+
+st.markdown(f"""
+<div class="metric-card">
+<h1>{trend}</h1>
+<h3>Momentum: {latest["RSI"]:.2f}</h3>
+<h3>ADX Strength: {latest["ADX"]:.2f}</h3>
+</div>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# TRADING SETUP
+# ==========================================
+
+st.markdown("""
+<div class="section-title">
+🎯 Trading Setup
+</div>
+""", unsafe_allow_html=True)
+
+entry = current_price
+sl = current_price - latest["ATR"] * 2
+tp1 = current_price + latest["ATR"] * 3
+tp2 = current_price + latest["ATR"] * 6
+
+t1,t2,t3,t4 = st.columns(4)
+
+with t1:
+    st.metric("ENTRY", f"${entry:.3f}")
+
+with t2:
+    st.metric("STOP LOSS", f"${sl:.3f}")
+
+with t3:
+    st.metric("TAKE PROFIT 1", f"${tp1:.3f}")
+
+with t4:
+    st.metric("TAKE PROFIT 2", f"${tp2:.3f}")
+
+st.markdown("""
+<br>
 <center>
-
-AI Dashboard • Real-Time Crypto Analysis
-
+RNDR AI Dashboard • Streamlit • TradingView Style
 </center>
 """, unsafe_allow_html=True)
