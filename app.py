@@ -10,20 +10,14 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
-from streamlit_autorefresh import st_autorefresh
-
-# ---------------- PAGE CONFIG ----------------
+# ---------------- PAGE ----------------
 
 st.set_page_config(
     page_title="RNDR AI Dashboard",
     layout="wide"
 )
 
-# ---------------- AUTO REFRESH ----------------
-
-st_autorefresh(interval=30000, key="refresh")
-
-# ---------------- CSS ----------------
+# ---------------- CLEAN CSS ----------------
 
 st.markdown("""
 <style>
@@ -44,6 +38,7 @@ html, body, [class*="css"] {
     border-radius: 18px;
     text-align: center;
     box-shadow: 0 0 18px rgba(0,255,255,0.08);
+    margin-bottom: 10px;
 }
 
 .metric-title {
@@ -77,37 +72,61 @@ df = yf.download(
     "RENDER-USD",
     period="90d",
     interval="1h",
-    auto_adjust=True
+    auto_adjust=True,
+    progress=False
 )
+
+# FIX MULTIINDEX
+
+if isinstance(df.columns, pd.MultiIndex):
+    df.columns = df.columns.get_level_values(0)
+
+# KEEP ONLY NEEDED COLUMNS
+
+df = df[[
+    "Open",
+    "High",
+    "Low",
+    "Close",
+    "Volume"
+]].copy()
+
+# FORCE 1D SERIES
+
+df["Open"] = df["Open"].astype(float)
+df["High"] = df["High"].astype(float)
+df["Low"] = df["Low"].astype(float)
+df["Close"] = df["Close"].astype(float)
+df["Volume"] = df["Volume"].astype(float)
 
 df.dropna(inplace=True)
 
 # ---------------- INDICATORS ----------------
 
 df["EMA20"] = ta.trend.ema_indicator(
-    df["Close"],
+    close=df["Close"],
     window=20
 )
 
 df["EMA50"] = ta.trend.ema_indicator(
-    df["Close"],
+    close=df["Close"],
     window=50
 )
 
 df["RSI"] = ta.momentum.rsi(
-    df["Close"],
+    close=df["Close"],
     window=14
 )
 
-macd = ta.trend.MACD(df["Close"])
+macd = ta.trend.MACD(close=df["Close"])
 
 df["MACD"] = macd.macd()
 df["MACD_SIGNAL"] = macd.macd_signal()
 
 df["ATR"] = ta.volatility.average_true_range(
-    df["High"],
-    df["Low"],
-    df["Close"],
+    high=df["High"],
+    low=df["Low"],
+    close=df["Close"],
     window=14
 )
 
@@ -123,9 +142,11 @@ df["Volatility"] = (
 
 df["Target"] = df["Close"].shift(-1)
 
-df["TargetClass"] = (
-    df["Close"].shift(-1) > df["Close"]
-).astype(int)
+df["TargetClass"] = np.where(
+    df["Close"].shift(-1) > df["Close"],
+    1,
+    0
+)
 
 df.dropna(inplace=True)
 
@@ -145,7 +166,7 @@ X = df[features]
 y_class = df["TargetClass"]
 y_reg = df["Target"]
 
-# ---------------- SPLIT ----------------
+# ---------------- TRAIN TEST ----------------
 
 X_train, X_test, y_train_class, y_test_class = train_test_split(
     X,
@@ -179,7 +200,7 @@ reg.fit(X_train, y_train_reg)
 
 # ---------------- PREDICTIONS ----------------
 
-latest_features = X.iloc[-1:]
+latest_features = X.iloc[[-1]]
 
 direction_pred = clf.predict(latest_features)[0]
 
@@ -251,7 +272,7 @@ with c4:
     </div>
     """, unsafe_allow_html=True)
 
-# ---------------- EMA CHART ----------------
+# ---------------- PRICE + EMA ----------------
 
 st.subheader("EMA 20 vs EMA 50")
 
