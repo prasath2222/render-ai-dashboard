@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import ta
 import plotly.graph_objects as go
 
 from sklearn.ensemble import RandomForestClassifier
@@ -10,14 +9,14 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
-# ---------------- PAGE ----------------
+# ================= PAGE =================
 
 st.set_page_config(
     page_title="RNDR AI Dashboard",
     layout="wide"
 )
 
-# ---------------- CLEAN CSS ----------------
+# ================= CSS =================
 
 st.markdown("""
 <style>
@@ -27,27 +26,15 @@ html, body, [class*="css"] {
     color: white;
 }
 
-.block-container {
-    padding-top: 1rem;
-    max-width: 100%;
-}
-
-.metric-card {
+.metric {
     background: #161b22;
-    padding: 22px;
-    border-radius: 18px;
+    padding: 20px;
+    border-radius: 16px;
     text-align: center;
-    box-shadow: 0 0 18px rgba(0,255,255,0.08);
-    margin-bottom: 10px;
 }
 
-.metric-title {
-    color: #9ca3af;
-    font-size: 18px;
-}
-
-.metric-value {
-    font-size: 34px;
+.big {
+    font-size: 32px;
     font-weight: bold;
 }
 
@@ -62,127 +49,100 @@ html, body, [class*="css"] {
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- TITLE ----------------
+# ================= TITLE =================
 
 st.title("🚀 RNDR AI Dashboard")
 
-# ---------------- DATA ----------------
+# ================= DOWNLOAD DATA =================
 
 df = yf.download(
-    "RENDER-USD",
-    period="90d",
+    tickers="RENDER-USD",
+    period="60d",
     interval="1h",
-    auto_adjust=True,
     progress=False
 )
 
-# FIX MULTIINDEX
+# ================= FIX COLUMNS =================
+
+df = df.copy()
 
 if isinstance(df.columns, pd.MultiIndex):
     df.columns = df.columns.get_level_values(0)
 
-# KEEP ONLY NEEDED COLUMNS
+# ================= KEEP NEEDED =================
 
-df = df[[
-    "Open",
-    "High",
-    "Low",
-    "Close",
-    "Volume"
-]].copy()
+df = df[["Open", "High", "Low", "Close", "Volume"]]
 
-# FORCE 1D SERIES
+# ================= FORCE SERIES =================
 
-df["Open"] = df["Open"].astype(float)
-df["High"] = df["High"].astype(float)
-df["Low"] = df["Low"].astype(float)
-df["Close"] = df["Close"].astype(float)
-df["Volume"] = df["Volume"].astype(float)
+close = df["Close"].squeeze()
+high = df["High"].squeeze()
+low = df["Low"].squeeze()
 
-df.dropna(inplace=True)
+# ================= INDICATORS MANUAL =================
 
-# ---------------- INDICATORS ----------------
+df["EMA20"] = close.ewm(span=20).mean()
 
-df["EMA20"] = ta.trend.ema_indicator(
-    close=df["Close"],
-    window=20
-)
+df["EMA50"] = close.ewm(span=50).mean()
 
-df["EMA50"] = ta.trend.ema_indicator(
-    close=df["Close"],
-    window=50
-)
+delta = close.diff()
 
-df["RSI"] = ta.momentum.rsi(
-    close=df["Close"],
-    window=14
-)
+gain = delta.clip(lower=0)
+loss = -delta.clip(upper=0)
 
-macd = ta.trend.MACD(close=df["Close"])
+avg_gain = gain.rolling(14).mean()
+avg_loss = loss.rolling(14).mean()
 
-df["MACD"] = macd.macd()
-df["MACD_SIGNAL"] = macd.macd_signal()
+rs = avg_gain / avg_loss
 
-df["ATR"] = ta.volatility.average_true_range(
-    high=df["High"],
-    low=df["Low"],
-    close=df["Close"],
-    window=14
-)
+df["RSI"] = 100 - (100 / (1 + rs))
 
-df["Volatility"] = (
-    df["Close"]
-    .pct_change()
-    .rolling(24)
-    .std()
-    * 100
-)
+df["Volatility"] = close.pct_change().rolling(24).std() * 100
 
-# ---------------- TARGETS ----------------
+# ================= TARGETS =================
 
-df["Target"] = df["Close"].shift(-1)
+df["Target"] = close.shift(-1)
 
 df["TargetClass"] = np.where(
-    df["Close"].shift(-1) > df["Close"],
+    close.shift(-1) > close,
     1,
     0
 )
 
 df.dropna(inplace=True)
 
-# ---------------- FEATURES ----------------
+# ================= FEATURES =================
 
 features = [
     "EMA20",
     "EMA50",
     "RSI",
-    "MACD",
-    "ATR",
     "Volatility"
 ]
 
 X = df[features]
 
 y_class = df["TargetClass"]
+
 y_reg = df["Target"]
 
-# ---------------- TRAIN TEST ----------------
+# ================= SPLIT =================
 
-X_train, X_test, y_train_class, y_test_class = train_test_split(
+X_train, X_test, y_train_c, y_test_c = train_test_split(
     X,
     y_class,
     test_size=0.2,
     shuffle=False
 )
 
-_, _, y_train_reg, y_test_reg = train_test_split(
+_, _, y_train_r, y_test_r = train_test_split(
     X,
     y_reg,
     test_size=0.2,
     shuffle=False
 )
 
-# ---------------- MODELS ----------------
+# ================= MODELS =================
 
 clf = RandomForestClassifier(
     n_estimators=100,
@@ -194,125 +154,108 @@ reg = RandomForestRegressor(
     random_state=42
 )
 
-clf.fit(X_train, y_train_class)
+clf.fit(X_train, y_train_c)
 
-reg.fit(X_train, y_train_reg)
+reg.fit(X_train, y_train_r)
 
-# ---------------- PREDICTIONS ----------------
+# ================= PREDICTIONS =================
 
-latest_features = X.iloc[[-1]]
+latest = X.iloc[[-1]]
 
-direction_pred = clf.predict(latest_features)[0]
+direction = clf.predict(latest)[0]
 
-direction_prob = clf.predict_proba(latest_features)[0]
+prob = clf.predict_proba(latest)[0]
 
-predicted_price = reg.predict(latest_features)[0]
+future_price = reg.predict(latest)[0]
 
 accuracy = accuracy_score(
-    y_test_class,
+    y_test_c,
     clf.predict(X_test)
 )
 
-# ---------------- SIGNAL ----------------
+# ================= SIGNAL =================
 
-if direction_pred == 1:
+if direction == 1:
     signal = "UP"
     signal_color = "green"
-    confidence = direction_prob[1] * 100
+    confidence = prob[1] * 100
 else:
     signal = "DOWN"
     signal_color = "red"
-    confidence = direction_prob[0] * 100
+    confidence = prob[0] * 100
 
-# ---------------- LIVE PRICE ----------------
+# ================= LIVE PRICE =================
 
-current_price = float(df["Close"].iloc[-1])
+current_price = float(close.iloc[-1])
 
-# ---------------- CARDS ----------------
+# ================= METRICS =================
 
 c1, c2, c3, c4 = st.columns(4)
 
 with c1:
     st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">RNDR Price</div>
-        <div class="metric-value">
-            ${current_price:.2f}
-        </div>
+    <div class="metric">
+    <h3>RNDR Price</h3>
+    <div class="big">${current_price:.2f}</div>
     </div>
     """, unsafe_allow_html=True)
 
 with c2:
     st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">AI Direction</div>
-        <div class="metric-value {signal_color}">
-            {signal}
-        </div>
+    <div class="metric">
+    <h3>Direction</h3>
+    <div class="big {signal_color}">{signal}</div>
     </div>
     """, unsafe_allow_html=True)
 
 with c3:
     st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">Predicted Price</div>
-        <div class="metric-value">
-            ${predicted_price:.2f}
-        </div>
+    <div class="metric">
+    <h3>Predicted Price</h3>
+    <div class="big">${future_price:.2f}</div>
     </div>
     """, unsafe_allow_html=True)
 
 with c4:
     st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">Confidence</div>
-        <div class="metric-value">
-            {confidence:.1f}%
-        </div>
+    <div class="metric">
+    <h3>Confidence</h3>
+    <div class="big">{confidence:.1f}%</div>
     </div>
     """, unsafe_allow_html=True)
 
-# ---------------- PRICE + EMA ----------------
+# ================= PRICE CHART =================
 
-st.subheader("EMA 20 vs EMA 50")
+st.subheader("RNDR Price + EMA")
 
 fig = go.Figure()
 
 fig.add_trace(go.Scatter(
     x=df.index,
-    y=df["Close"],
-    mode="lines",
-    name="Price",
-    line=dict(color="white", width=2)
+    y=close,
+    name="Price"
 ))
 
 fig.add_trace(go.Scatter(
     x=df.index,
     y=df["EMA20"],
-    mode="lines",
-    name="EMA20",
-    line=dict(color="cyan", width=2)
+    name="EMA20"
 ))
 
 fig.add_trace(go.Scatter(
     x=df.index,
     y=df["EMA50"],
-    mode="lines",
-    name="EMA50",
-    line=dict(color="orange", width=2)
+    name="EMA50"
 ))
 
 fig.update_layout(
     template="plotly_dark",
-    height=600,
-    xaxis_rangeslider_visible=False,
-    paper_bgcolor="#161b22",
-    plot_bgcolor="#161b22"
+    height=600
 )
 
 st.plotly_chart(fig, use_container_width=True)
 
-# ---------------- RSI ----------------
+# ================= RSI =================
 
 st.subheader("RSI")
 
@@ -321,8 +264,7 @@ rsi_fig = go.Figure()
 rsi_fig.add_trace(go.Scatter(
     x=df.index,
     y=df["RSI"],
-    mode="lines",
-    line=dict(color="blue", width=3)
+    line=dict(color="blue")
 ))
 
 rsi_fig.update_layout(
@@ -332,54 +274,7 @@ rsi_fig.update_layout(
 
 st.plotly_chart(rsi_fig, use_container_width=True)
 
-# ---------------- MACD ----------------
-
-st.subheader("MACD")
-
-macd_fig = go.Figure()
-
-macd_fig.add_trace(go.Scatter(
-    x=df.index,
-    y=df["MACD"],
-    mode="lines",
-    line=dict(color="pink", width=3)
-))
-
-macd_fig.add_trace(go.Scatter(
-    x=df.index,
-    y=df["MACD_SIGNAL"],
-    mode="lines",
-    line=dict(color="white", width=2)
-))
-
-macd_fig.update_layout(
-    template="plotly_dark",
-    height=300
-)
-
-st.plotly_chart(macd_fig, use_container_width=True)
-
-# ---------------- ATR ----------------
-
-st.subheader("ATR")
-
-atr_fig = go.Figure()
-
-atr_fig.add_trace(go.Scatter(
-    x=df.index,
-    y=df["ATR"],
-    mode="lines",
-    line=dict(color="yellow", width=3)
-))
-
-atr_fig.update_layout(
-    template="plotly_dark",
-    height=300
-)
-
-st.plotly_chart(atr_fig, use_container_width=True)
-
-# ---------------- VOLATILITY ----------------
+# ================= VOLATILITY =================
 
 st.subheader("Volatility")
 
@@ -388,8 +283,7 @@ vol_fig = go.Figure()
 vol_fig.add_trace(go.Scatter(
     x=df.index,
     y=df["Volatility"],
-    mode="lines",
-    line=dict(color="green", width=3)
+    line=dict(color="green")
 ))
 
 vol_fig.update_layout(
@@ -399,14 +293,8 @@ vol_fig.update_layout(
 
 st.plotly_chart(vol_fig, use_container_width=True)
 
-# ---------------- ACCURACY ----------------
+# ================= ACCURACY =================
 
-st.subheader("AI Model Accuracy")
+st.subheader("Model Accuracy")
 
 st.write(f"Classification Accuracy: {accuracy:.2f}")
-
-# ---------------- FOOTER ----------------
-
-st.markdown("---")
-
-st.caption("RNDR AI Dashboard • RandomForest ML + Streamlit")
