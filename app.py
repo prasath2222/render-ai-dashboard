@@ -1,6 +1,5 @@
 # ==========================================
 # ADVANCED RNDR AI DASHBOARD
-# LIVE PRICE + AI + FLOW + TRADINGVIEW
 # ==========================================
 
 import streamlit as st
@@ -98,7 +97,7 @@ gb_regressor = joblib.load("gb_regressor.pkl")
 features = joblib.load("features.pkl")
 
 # ==========================================
-# LIVE MARKET DATA
+# LIVE DATA
 # ==========================================
 
 df = yf.download(
@@ -123,10 +122,6 @@ df = df[[
     "Volume"
 ]].copy()
 
-# ==========================================
-# SERIES
-# ==========================================
-
 close = df["Close"].squeeze()
 high = df["High"].squeeze()
 low = df["Low"].squeeze()
@@ -136,13 +131,9 @@ volume = df["Volume"].squeeze()
 # INDICATORS
 # ==========================================
 
-# EMA
-
 df["EMA20"] = close.ewm(span=20).mean()
 df["EMA50"] = close.ewm(span=50).mean()
 df["EMA200"] = close.ewm(span=200).mean()
-
-# RSI
 
 delta = close.diff()
 
@@ -156,15 +147,11 @@ rs = avg_gain / avg_loss
 
 df["RSI"] = 100 - (100 / (1 + rs))
 
-# MACD
-
 ema12 = close.ewm(span=12).mean()
 ema26 = close.ewm(span=26).mean()
 
 df["MACD"] = ema12 - ema26
 df["MACD_SIGNAL"] = df["MACD"].ewm(span=9).mean()
-
-# ATR
 
 tr1 = high - low
 tr2 = abs(high - close.shift())
@@ -174,7 +161,7 @@ tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
 df["ATR"] = tr.rolling(14).mean()
 
-# BOLLINGER
+df["Volatility"] = close.pct_change().rolling(24).std() * 100
 
 df["BB_MIDDLE"] = close.rolling(20).mean()
 
@@ -183,86 +170,112 @@ std = close.rolling(20).std()
 df["BB_UPPER"] = df["BB_MIDDLE"] + (std * 2)
 df["BB_LOWER"] = df["BB_MIDDLE"] - (std * 2)
 
-# VOLATILITY
+df["BullTrend"] = np.where(
+    (
+        (df["EMA20"] > df["EMA50"]) &
+        (df["EMA50"] > df["EMA200"])
+    ),
+    1,
+    0
+)
 
-df["Volatility"] = close.pct_change().rolling(24).std() * 100
+df["RecentHigh"] = high.rolling(20).max()
 
-# MOMENTUM
+df["BreakoutStrength"] = (
+    close - df["RecentHigh"].shift(1)
+) / close
 
-df["Momentum"] = close - close.shift(10)
+df["Momentum5"] = (
+    close - close.shift(5)
+) / close
 
-# BUY SELL FLOW
+df["Momentum10"] = (
+    close - close.shift(10)
+) / close
 
-buy_volume = volume[df["Close"] > df["Open"]].sum()
-sell_volume = volume[df["Close"] <= df["Open"]].sum()
+df["VolumeMA"] = volume.rolling(20).mean()
 
-buy_ratio = (buy_volume / (buy_volume + sell_volume)) * 100
-sell_ratio = 100 - buy_ratio
+df["VolumeSpike"] = (
+    volume / df["VolumeMA"]
+)
 
-# ==========================================
-# CLEAN
-# ==========================================
+df["BodyStrength"] = (
+    abs(df["Close"] - df["Open"])
+) / (
+    df["High"] - df["Low"] + 0.0001
+)
 
 df.dropna(inplace=True)
 
 # ==========================================
-# LIVE PREDICTION
+# PREDICTION
 # ==========================================
 
-latest = df[features].iloc[[-1]]
+latest = df[features].iloc[-1:]
 
-# CLASSIFICATION
+rf_class = rf_classifier.predict(latest)[0]
+gb_class = gb_classifier.predict(latest)[0]
 
-rf_direction = rf_classifier.predict(latest)[0]
-gb_direction = gb_classifier.predict(latest)[0]
+direction_votes = [
+    rf_class,
+    gb_class
+]
 
-rf_prob = rf_classifier.predict_proba(latest)[0]
-gb_prob = gb_classifier.predict_proba(latest)[0]
+final_direction = int(round(np.mean(direction_votes)))
 
-# REGRESSION
+signal_map = {
+    2: "STRONG BUY",
+    1: "BUY",
+    0: "SIDEWAYS",
+    -1: "SELL",
+    -2: "STRONG SELL"
+}
+
+signal = signal_map[final_direction]
 
 rf_price = rf_regressor.predict(latest)[0]
 gb_price = gb_regressor.predict(latest)[0]
 
-# ENSEMBLE
-
-direction_votes = [
-    rf_direction,
-    gb_direction
-]
-
-final_direction = round(np.mean(direction_votes))
-
-predicted_price = np.mean([
-    rf_price,
-    gb_price
-])
-
-confidence = np.mean([
-    max(rf_prob),
-    max(gb_prob)
-]) * 100
-
-# ==========================================
-# SIGNAL
-# ==========================================
-
-if final_direction == 1:
-    signal = "BUY / UP"
-    signal_color = "green"
-else:
-    signal = "SELL / DOWN"
-    signal_color = "red"
-
-# ==========================================
-# LIVE PRICE
-# ==========================================
+predicted_price = (
+    rf_price + gb_price
+) / 2
 
 current_price = float(close.iloc[-1])
+
+atr = float(df["ATR"].iloc[-1])
+
+pred_low = current_price - atr
+pred_high = current_price + atr
 
 usd_inr = 83.2
 
 price_inr = current_price * usd_inr
+
+# ==========================================
+# BUY SELL FLOW
+# ==========================================
+
+buy_volume = volume[df["Close"] > df["Open"]].sum()
+sell_volume = volume[df["Close"] <= df["Open"]].sum()
+
+buy_ratio = (
+    buy_volume / (buy_volume + sell_volume)
+) * 100
+
+sell_ratio = 100 - buy_ratio
+
+# ==========================================
+# CONFIDENCE
+# ==========================================
+
+confidence = min(
+    95,
+    round(
+        abs(predicted_price - current_price)
+        / current_price * 100 * 12,
+        2
+    )
+)
 
 # ==========================================
 # TOP CARDS
@@ -271,129 +284,86 @@ price_inr = current_price * usd_inr
 c1, c2, c3, c4, c5 = st.columns(5)
 
 with c1:
-    st.markdown(f"""
+    st.markdown(f'''
     <div class="metric-card">
-        <div class="metric-title">RNDR USD</div>
-        <div class="metric-value blue">
-            ${current_price:.3f}
-        </div>
+    <div class="metric-title">RNDR USD</div>
+    <div class="metric-value blue">
+    ${current_price:.3f}
     </div>
-    """, unsafe_allow_html=True)
+    </div>
+    ''', unsafe_allow_html=True)
 
 with c2:
-    st.markdown(f"""
+    st.markdown(f'''
     <div class="metric-card">
-        <div class="metric-title">RNDR INR</div>
-        <div class="metric-value yellow">
-            ₹{price_inr:.2f}
-        </div>
+    <div class="metric-title">RNDR INR</div>
+    <div class="metric-value yellow">
+    ₹{price_inr:.2f}
     </div>
-    """, unsafe_allow_html=True)
+    </div>
+    ''', unsafe_allow_html=True)
 
 with c3:
-    st.markdown(f"""
+    st.markdown(f'''
     <div class="metric-card">
-        <div class="metric-title">AI Signal</div>
-        <div class="metric-value {signal_color}">
-            {signal}
-        </div>
+    <div class="metric-title">AI Signal</div>
+    <div class="metric-value green">
+    {signal}
     </div>
-    """, unsafe_allow_html=True)
+    </div>
+    ''', unsafe_allow_html=True)
 
 with c4:
-    st.markdown(f"""
+    st.markdown(f'''
     <div class="metric-card">
-        <div class="metric-title">Predicted Price</div>
-        <div class="metric-value purple">
-            ${predicted_price:.3f}
-        </div>
+    <div class="metric-title">Predicted Range</div>
+    <div class="metric-value purple">
+    ${pred_low:.2f} → ${pred_high:.2f}
     </div>
-    """, unsafe_allow_html=True)
+    </div>
+    ''', unsafe_allow_html=True)
 
 with c5:
-    st.markdown(f"""
+    st.markdown(f'''
     <div class="metric-card">
-        <div class="metric-title">Confidence</div>
-        <div class="metric-value green">
-            {confidence:.1f}%
-        </div>
+    <div class="metric-title">Confidence</div>
+    <div class="metric-value green">
+    {confidence:.1f}%
     </div>
-    """, unsafe_allow_html=True)
+    </div>
+    ''', unsafe_allow_html=True)
 
 # ==========================================
-# FLOW CARDS
+# FLOW
 # ==========================================
 
 f1, f2 = st.columns(2)
 
 with f1:
-    st.markdown(f"""
+    st.markdown(f'''
     <div class="metric-card">
-        <div class="metric-title">Buy Volume Inflow</div>
-        <div class="metric-value green">
-            {buy_ratio:.1f}%
-        </div>
+    <div class="metric-title">Buy Inflow</div>
+    <div class="metric-value green">
+    {buy_ratio:.1f}%
     </div>
-    """, unsafe_allow_html=True)
+    </div>
+    ''', unsafe_allow_html=True)
 
 with f2:
-    st.markdown(f"""
+    st.markdown(f'''
     <div class="metric-card">
-        <div class="metric-title">Sell Volume Outflow</div>
-        <div class="metric-value red">
-            {sell_ratio:.1f}%
-        </div>
+    <div class="metric-title">Sell Outflow</div>
+    <div class="metric-value red">
+    {sell_ratio:.1f}%
     </div>
-    """, unsafe_allow_html=True)
+    </div>
+    ''', unsafe_allow_html=True)
 
 # ==========================================
-# TRADINGVIEW
+# PRICE CHART
 # ==========================================
 
-st.subheader("Live TradingView Chart")
-
-tradingview_html = """
-<div class="tradingview-widget-container">
-<div id="tradingview_chart"></div>
-
-<script type="text/javascript"
-src="https://s3.tradingview.com/tv.js"></script>
-
-<script type="text/javascript">
-new TradingView.widget({
-"width": "100%",
-"height": 700,
-"symbol": "BINANCE:RENDERUSDT",
-"interval": "60",
-"timezone": "Etc/UTC",
-"theme": "dark",
-"style": "1",
-"locale": "en",
-"toolbar_bg": "#050816",
-"enable_publishing": false,
-"hide_top_toolbar": false,
-"save_image": true,
-"container_id": "tradingview_chart",
-"studies": [
-"RSI@tv-basicstudies",
-"MACD@tv-basicstudies",
-"BB@tv-basicstudies"
-]
-});
-</script>
-</div>
-"""
-
-st.components.v1.html(
-    tradingview_html,
-    height=720
-)
-
-# ==========================================
-# EMA PRICE CHART
-# ==========================================
-
-st.subheader("EMA Trend Analysis")
+st.subheader("RNDR EMA Trend")
 
 fig = go.Figure()
 
@@ -439,104 +409,8 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-# ==========================================
-# INDICATORS
-# ==========================================
-
-a1, a2 = st.columns(2)
-
-with a1:
-
-    rsi_fig = go.Figure()
-
-    rsi_fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df["RSI"],
-        line=dict(color="blue", width=3)
-    ))
-
-    rsi_fig.update_layout(
-        template="plotly_dark",
-        height=350,
-        title="RSI"
-    )
-
-    st.plotly_chart(rsi_fig, use_container_width=True)
-
-with a2:
-
-    macd_fig = go.Figure()
-
-    macd_fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df["MACD"],
-        line=dict(color="pink", width=3),
-        name="MACD"
-    ))
-
-    macd_fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df["MACD_SIGNAL"],
-        line=dict(color="white", width=2),
-        name="Signal"
-    ))
-
-    macd_fig.update_layout(
-        template="plotly_dark",
-        height=350,
-        title="MACD"
-    )
-
-    st.plotly_chart(macd_fig, use_container_width=True)
-
-# ==========================================
-# ATR + VOLATILITY
-# ==========================================
-
-b1, b2 = st.columns(2)
-
-with b1:
-
-    atr_fig = go.Figure()
-
-    atr_fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df["ATR"],
-        line=dict(color="yellow", width=3)
-    ))
-
-    atr_fig.update_layout(
-        template="plotly_dark",
-        height=350,
-        title="ATR"
-    )
-
-    st.plotly_chart(atr_fig, use_container_width=True)
-
-with b2:
-
-    vol_fig = go.Figure()
-
-    vol_fig.add_trace(go.Scatter(
-        x=df.index,
-        y=df["Volatility"],
-        line=dict(color="green", width=3)
-    ))
-
-    vol_fig.update_layout(
-        template="plotly_dark",
-        height=350,
-        title="Volatility"
-    )
-
-    st.plotly_chart(vol_fig, use_container_width=True)
-
-# ==========================================
-# FOOTER
-# ==========================================
-
 st.markdown("---")
 
 st.caption(
-    "Advanced RNDR AI System • Live Prediction • Ensemble ML • Market Flow Analytics"
+    "Advanced RNDR AI Dashboard"
 )
