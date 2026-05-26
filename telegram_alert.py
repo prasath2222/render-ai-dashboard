@@ -4,7 +4,7 @@ import requests
 # TELEGRAM CONFIG
 # =========================================================
 
-BOT_TOKEN = "8819680977:AAHfAT4IOAa4zop6LpxREQMPaXujpPj2H1w"
+BOT_TOKEN = "8072713136:AAEE-xY6cZ-b6T5_HwZ2CESBqNB5AkNWtHE"
 
 CHAT_ID = "6941184785"
 
