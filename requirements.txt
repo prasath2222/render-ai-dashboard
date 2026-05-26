@@ -7,8 +7,6 @@ ta
 scikit-learn
 xgboost
 lightgbm
-catboost
-tensorflow
 joblib
 matplotlib
 plotly
