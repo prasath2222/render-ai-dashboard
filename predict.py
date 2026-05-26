@@ -1,423 +1,238 @@
-# =========================================================
-# PREDICT.PY
-# =========================================================
-
+import joblib
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import ta
-import joblib
 
-# =========================================================
-# LOAD MODELS
-# =========================================================
+# ==========================================
+# LOAD FILES
+# ==========================================
 
-classifier = joblib.load(
+xgb_model = joblib.load("xgb_model.pkl")
 
-    "rf_classifier.pkl"
+xgb_reg = joblib.load("xgb_reg.pkl")
 
-)
+scaler = joblib.load("scaler.pkl")
 
-regressor = joblib.load(
+features = joblib.load("features.pkl")
 
-    "rf_regressor.pkl"
-
-)
-
-features = joblib.load(
-
-    "features.pkl"
-
-)
-
-# =========================================================
-# DOWNLOAD RNDR DATA
-# =========================================================
+# ==========================================
+# DOWNLOAD LATEST DATA
+# ==========================================
 
 df = yf.download(
-
-    "RENDER-USD",
-
-    period="30d",
-
+    "BTC-USD",
     interval="1h",
-
-    auto_adjust=True
-
+    period="90d",
+    auto_adjust=True,
+    progress=False
 )
-
-# =========================================================
-# FIX COLUMNS
-# =========================================================
 
 if isinstance(df.columns, pd.MultiIndex):
 
     df.columns = df.columns.get_level_values(0)
 
-# =========================================================
-# DOWNLOAD BTC
-# =========================================================
+df.reset_index(inplace=True)
 
-btc = yf.download(
+# ==========================================
+# SERIES
+# ==========================================
 
-    "BTC-USD",
+close = df["Close"]
 
-    period="30d",
+high = df["High"]
 
-    interval="1h",
+low = df["Low"]
 
-    auto_adjust=True
+volume = df["Volume"]
 
-)
+# ==========================================
+# FEATURES
+# ==========================================
 
-if isinstance(btc.columns, pd.MultiIndex):
-
-    btc.columns = btc.columns.get_level_values(0)
-
-# =========================================================
-# BTC FEATURES
-# =========================================================
-
-df["BTC_Close"] = btc["Close"]
-
-df["BTC_Return"] = (
-
-    df["BTC_Close"]
-
-    .pct_change()
-
-)
-
-# =========================================================
-# RSI
-# =========================================================
-
-df["RSI"] = ta.momentum.RSIIndicator(
-
-    close=df["Close"],
-
+df["rsi14"] = ta.momentum.RSIIndicator(
+    close=close,
     window=14
-
 ).rsi()
 
-# =========================================================
-# MACD
-# =========================================================
-
-macd = ta.trend.MACD(
-
-    close=df["Close"]
-
-)
-
-df["MACD"] = macd.macd()
-
-df["MACD_SIGNAL"] = macd.macd_signal()
-
-df["MACD_DIFF"] = macd.macd_diff()
-
-# =========================================================
-# EMA
-# =========================================================
-
-df["EMA20"] = ta.trend.EMAIndicator(
-
-    close=df["Close"],
-
+df["ema20"] = ta.trend.EMAIndicator(
+    close=close,
     window=20
-
 ).ema_indicator()
 
-df["EMA50"] = ta.trend.EMAIndicator(
-
-    close=df["Close"],
-
+df["ema50"] = ta.trend.EMAIndicator(
+    close=close,
     window=50
-
 ).ema_indicator()
 
-df["EMA200"] = ta.trend.EMAIndicator(
+macd = ta.trend.MACD(close=close)
 
-    close=df["Close"],
+df["macd"] = macd.macd()
 
-    window=200
-
-).ema_indicator()
-
-# =========================================================
-# SMA
-# =========================================================
-
-df["SMA20"] = ta.trend.SMAIndicator(
-
-    close=df["Close"],
-
-    window=20
-
-).sma_indicator()
-
-# =========================================================
-# ATR
-# =========================================================
-
-df["ATR"] = ta.volatility.AverageTrueRange(
-
-    high=df["High"],
-
-    low=df["Low"],
-
-    close=df["Close"],
-
-    window=14
-
-).average_true_range()
-
-# =========================================================
-# BOLLINGER
-# =========================================================
+df["macd_signal"] = macd.macd_signal()
 
 bb = ta.volatility.BollingerBands(
-
-    close=df["Close"],
-
-    window=20
-
+    close=close
 )
 
-df["BB_HIGH"] = bb.bollinger_hband()
+df["bb_high"] = bb.bollinger_hband()
 
-df["BB_LOW"] = bb.bollinger_lband()
+df["bb_low"] = bb.bollinger_lband()
 
-df["BB_WIDTH"] = bb.bollinger_wband()
-
-# =========================================================
-# STOCH
-# =========================================================
-
-stoch = ta.momentum.StochasticOscillator(
-
-    high=df["High"],
-
-    low=df["Low"],
-
-    close=df["Close"],
-
-    window=14,
-
-    smooth_window=3
-
+df["bb_position"] = (
+    close - df["bb_low"]
+) / (
+    df["bb_high"] - df["bb_low"] + 1e-9
 )
 
-df["STOCH"] = stoch.stoch()
+df["atr"] = ta.volatility.AverageTrueRange(
+    high=high,
+    low=low,
+    close=close
+).average_true_range()
 
-df["STOCH_SIGNAL"] = stoch.stoch_signal()
+df["returns_1h"] = close.pct_change()
 
-# =========================================================
-# RETURNS
-# =========================================================
+df["mom5"] = (
+    close / close.shift(5)
+) - 1
 
-df["Returns"] = (
-
-    df["Close"]
-
-    .pct_change()
-
+df["vol_ma20"] = (
+    volume.rolling(20).mean()
 )
 
-# =========================================================
-# VOLATILITY
-# =========================================================
+df["vol_ratio"] = (
+    volume / df["vol_ma20"]
+)
 
-df["Volatility"] = (
+# ==========================================
+# EXTRA FEATURES
+# ==========================================
 
-    df["Returns"]
+df["rsi7"] = ta.momentum.RSIIndicator(
+    close=close,
+    window=7
+).rsi()
 
+df["ema_cross"] = (
+    df["ema20"] - df["ema50"]
+)
+
+df["price_ema20"] = (
+    close - df["ema20"]
+) / df["ema20"]
+
+df["price_ema50"] = (
+    close - df["ema50"]
+) / df["ema50"]
+
+df["macd_hist"] = macd.macd_diff()
+
+df["atr_pct"] = (
+    df["atr"] / close
+)
+
+adx = ta.trend.ADXIndicator(
+    high=high,
+    low=low,
+    close=close
+)
+
+df["adx"] = adx.adx()
+
+df["di_diff"] = (
+    adx.adx_pos() - adx.adx_neg()
+)
+
+df["returns_4h"] = (
+    close.pct_change(4)
+)
+
+df["returns_24h"] = (
+    close.pct_change(24)
+)
+
+df["mom10"] = (
+    close / close.shift(10)
+) - 1
+
+df["volatility"] = (
+    df["returns_1h"]
     .rolling(24)
-
     .std()
-
 )
 
-# =========================================================
-# MOMENTUM
-# =========================================================
+# PLACEHOLDERS
+df["btc_returns"] = 0
+df["btc_vol_ratio"] = 1
+df["coin_vs_btc"] = 0
+df["fng"] = 50
 
-df["Momentum5"] = (
-
-    df["Close"]
-
-    - df["Close"].shift(5)
-
-)
-
-df["Momentum10"] = (
-
-    df["Close"]
-
-    - df["Close"].shift(10)
-
-)
-
-# =========================================================
-# BREAKOUT
-# =========================================================
-
-df["Breakout"] = (
-
-    df["Close"]
-
-    >
-
-    df["High"]
-
-    .rolling(20)
-
-    .max()
-
-    .shift(1)
-
-).astype(int)
-
-# =========================================================
-# VOLUME
-# =========================================================
-
-df["Volume_MA"] = (
-
-    df["Volume"]
-
-    .rolling(20)
-
-    .mean()
-
-)
-
-df["Volume_Spike"] = (
-
-    df["Volume"]
-
-    >
-
-    (df["Volume_MA"] * 1.5)
-
-).astype(int)
-
-# =========================================================
-# TREND
-# =========================================================
-
-df["Bull_Trend"] = np.where(
-
-    (
-
-        (df["EMA20"] > df["EMA50"])
-
-        &
-
-        (df["EMA50"] > df["EMA200"])
-
-    ),
-
-    1,
-
-    0
-
-)
-
-# =========================================================
+# ==========================================
 # CLEAN
-# =========================================================
-
-df.replace(
-
-    [np.inf, -np.inf],
-
-    np.nan,
-
-    inplace=True
-
-)
+# ==========================================
 
 df.dropna(inplace=True)
 
-# =========================================================
-# LATEST ROW
-# =========================================================
+# ==========================================
+# FINAL INPUT
+# ==========================================
 
-latest = df[features].iloc[-1:]
+latest = df[features].iloc[[-1]]
 
-# =========================================================
-# CLASSIFICATION PREDICTION
-# =========================================================
+# ==========================================
+# PREDICTIONS
+# ==========================================
 
-class_prediction = classifier.predict(
-
+prob = xgb_model.predict_proba(
     latest
+)[0][1]
 
+future_price = xgb_reg.predict(
+    latest
 )[0]
 
-# =========================================================
-# REGRESSION PREDICTION
-# =========================================================
+current_price = close.iloc[-1]
 
-future_price = regressor.predict(
-
-    latest
-
-)[0]
-
-# =========================================================
-# CURRENT PRICE
-# =========================================================
-
-current_price = float(
-
-    df["Close"].iloc[-1]
-
-)
-
-# =========================================================
-# CONFIDENCE
-# =========================================================
-
-confidence = np.max(
-
-    classifier.predict_proba(latest)
-
+change_pct = (
+    (
+        future_price - current_price
+    )
+    / current_price
 ) * 100
 
-# =========================================================
-# LABELS
-# =========================================================
+# ==========================================
+# SIGNAL
+# ==========================================
 
-if class_prediction == 2:
+if prob > 0.58:
 
-    movement = "BULLISH 🚀"
+    signal = "BUY"
 
-elif class_prediction == 0:
+elif prob < 0.42:
 
-    movement = "BEARISH 🔻"
+    signal = "SELL"
 
 else:
 
-    movement = "SIDEWAYS ➖"
+    signal = "HOLD"
 
-# =========================================================
+# ==========================================
 # OUTPUT
-# =========================================================
+# ==========================================
 
-print("\n===================================")
+print("\n==========================")
+print("LIVE AI PREDICTION")
+print("==========================")
 
-print("RNDR AI PREDICTION")
+print(f"Signal      : {signal}")
 
-print("===================================")
+print(f"Probability : {prob:.4f}")
 
-print(f"\nCurrent Price : ${current_price:.4f}")
+print(f"Confidence  : {prob*100:.2f}%")
 
-print(f"\nPredicted Price : ${future_price:.4f}")
+print(f"Current     : {current_price:.2f}")
 
-print(f"\nMarket Direction : {movement}")
+print(f"Forecast    : {future_price:.2f}")
 
-print(f"\nConfidence : {confidence:.2f}%")
-
-print("\n===================================")
+print(f"Change %    : {change_pct:+.2f}%")
