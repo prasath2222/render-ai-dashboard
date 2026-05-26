@@ -1,304 +1,655 @@
-# ==========================================
-# ADVANCED RNDR AI TRAINING SYSTEM
-# ==========================================
+# =========================================================
+# FINAL BEST TRAIN.PY
+# STABLE + CLEAN + COLAB WORKING
+# =========================================================
 
+# =========================================================
+# INSTALL
+# =========================================================
+
+!pip install yfinance ta xgboost joblib -q
+
+# =========================================================
+# IMPORTS
+# =========================================================
+
+import yfinance as yf
 import pandas as pd
 import numpy as np
-import yfinance as yf
+import ta
 import joblib
 
-from sklearn.ensemble import (
-    RandomForestClassifier,
-    GradientBoostingClassifier,
-    RandomForestRegressor,
-    GradientBoostingRegressor
-)
+from xgboost import XGBClassifier
+from xgboost import XGBRegressor
 
-# ==========================================
-# DOWNLOAD DATA
-# ==========================================
+from sklearn.metrics import accuracy_score
+
+# =========================================================
+# DOWNLOAD RNDR
+# =========================================================
 
 df = yf.download(
+
     "RENDER-USD",
-    period="180d",
+
+    period="730d",
+
     interval="1h",
-    progress=False
+
+    auto_adjust=True
+
 )
 
-# ==========================================
+# =========================================================
 # FIX COLUMNS
-# ==========================================
+# =========================================================
 
 if isinstance(df.columns, pd.MultiIndex):
+
     df.columns = df.columns.get_level_values(0)
 
-df = df[[
-    "Open",
-    "High",
-    "Low",
-    "Close",
-    "Volume"
-]].copy()
+# =========================================================
+# DOWNLOAD BTC
+# =========================================================
 
-# ==========================================
-# SERIES
-# ==========================================
+btc = yf.download(
 
-close = df["Close"].squeeze()
-high = df["High"].squeeze()
-low = df["Low"].squeeze()
-volume = df["Volume"].squeeze()
+    "BTC-USD",
 
-# ==========================================
-# EMA
-# ==========================================
+    period="730d",
 
-df["EMA20"] = close.ewm(span=20).mean()
-df["EMA50"] = close.ewm(span=50).mean()
-df["EMA200"] = close.ewm(span=200).mean()
+    interval="1h",
 
-# ==========================================
-# RSI
-# ==========================================
+    auto_adjust=True
 
-delta = close.diff()
-
-gain = delta.clip(lower=0)
-loss = -delta.clip(upper=0)
-
-avg_gain = gain.rolling(14).mean()
-avg_loss = loss.rolling(14).mean()
-
-rs = avg_gain / avg_loss
-
-df["RSI"] = 100 - (100 / (1 + rs))
-
-# ==========================================
-# MACD
-# ==========================================
-
-ema12 = close.ewm(span=12).mean()
-ema26 = close.ewm(span=26).mean()
-
-df["MACD"] = ema12 - ema26
-df["MACD_SIGNAL"] = df["MACD"].ewm(span=9).mean()
-
-# ==========================================
-# ATR
-# ==========================================
-
-tr1 = high - low
-tr2 = abs(high - close.shift())
-tr3 = abs(low - close.shift())
-
-tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
-df["ATR"] = tr.rolling(14).mean()
-
-# ==========================================
-# VOLATILITY
-# ==========================================
-
-df["Volatility"] = close.pct_change().rolling(24).std() * 100
-
-# ==========================================
-# BOLLINGER
-# ==========================================
-
-df["BB_MIDDLE"] = close.rolling(20).mean()
-
-std = close.rolling(20).std()
-
-df["BB_UPPER"] = df["BB_MIDDLE"] + (std * 2)
-df["BB_LOWER"] = df["BB_MIDDLE"] - (std * 2)
-
-# ==========================================
-# FUTURE RETURN
-# ==========================================
-
-future_period = 4
-
-df["FutureReturn"] = (
-    close.shift(-future_period) - close
-) / close
-
-# ==========================================
-# TREND REGIME
-# ==========================================
-
-df["BullTrend"] = np.where(
-    (
-        (df["EMA20"] > df["EMA50"]) &
-        (df["EMA50"] > df["EMA200"])
-    ),
-    1,
-    0
 )
 
-# ==========================================
-# BREAKOUT STRENGTH
-# ==========================================
+if isinstance(btc.columns, pd.MultiIndex):
 
-df["RecentHigh"] = high.rolling(20).max()
+    btc.columns = btc.columns.get_level_values(0)
 
-df["BreakoutStrength"] = (
-    close - df["RecentHigh"].shift(1)
-) / close
+# =========================================================
+# BTC FEATURES
+# =========================================================
 
-# ==========================================
+df["BTC_Close"] = btc["Close"]
+
+df["BTC_Return"] = (
+
+    df["BTC_Close"]
+
+    .pct_change()
+
+)
+
+# =========================================================
+# RSI
+# =========================================================
+
+df["RSI"] = ta.momentum.RSIIndicator(
+
+    close=df["Close"],
+
+    window=14
+
+).rsi()
+
+# =========================================================
+# MACD
+# =========================================================
+
+macd = ta.trend.MACD(
+
+    close=df["Close"]
+
+)
+
+df["MACD"] = macd.macd()
+
+df["MACD_SIGNAL"] = macd.macd_signal()
+
+df["MACD_DIFF"] = macd.macd_diff()
+
+# =========================================================
+# EMA
+# =========================================================
+
+df["EMA20"] = ta.trend.EMAIndicator(
+
+    close=df["Close"],
+
+    window=20
+
+).ema_indicator()
+
+df["EMA50"] = ta.trend.EMAIndicator(
+
+    close=df["Close"],
+
+    window=50
+
+).ema_indicator()
+
+df["EMA200"] = ta.trend.EMAIndicator(
+
+    close=df["Close"],
+
+    window=200
+
+).ema_indicator()
+
+# =========================================================
+# ATR
+# =========================================================
+
+df["ATR"] = ta.volatility.AverageTrueRange(
+
+    high=df["High"],
+
+    low=df["Low"],
+
+    close=df["Close"],
+
+    window=14
+
+).average_true_range()
+
+# =========================================================
+# BOLLINGER
+# =========================================================
+
+bb = ta.volatility.BollingerBands(
+
+    close=df["Close"],
+
+    window=20
+
+)
+
+df["BB_HIGH"] = bb.bollinger_hband()
+
+df["BB_LOW"] = bb.bollinger_lband()
+
+df["BB_WIDTH"] = bb.bollinger_wband()
+
+# =========================================================
+# RETURNS
+# =========================================================
+
+df["Returns"] = (
+
+    df["Close"]
+
+    .pct_change()
+
+)
+
+# =========================================================
+# VOLATILITY
+# =========================================================
+
+df["Volatility"] = (
+
+    df["Returns"]
+
+    .rolling(24)
+
+    .std()
+
+)
+
+# =========================================================
 # MOMENTUM
-# ==========================================
+# =========================================================
 
 df["Momentum5"] = (
-    close - close.shift(5)
-) / close
+
+    df["Close"]
+
+    - df["Close"].shift(5)
+
+)
 
 df["Momentum10"] = (
-    close - close.shift(10)
-) / close
 
-# ==========================================
+    df["Close"]
+
+    - df["Close"].shift(10)
+
+)
+
+# =========================================================
+# MARKET STRUCTURE
+# =========================================================
+
+df["Higher_High"] = (
+
+    df["High"]
+
+    > df["High"].shift(1)
+
+).astype(int)
+
+df["Higher_Low"] = (
+
+    df["Low"]
+
+    > df["Low"].shift(1)
+
+).astype(int)
+
+# =========================================================
+# BREAKOUT
+# =========================================================
+
+df["Breakout"] = (
+
+    df["Close"]
+
+    >
+
+    df["High"]
+
+    .rolling(20)
+
+    .max()
+
+    .shift(1)
+
+).astype(int)
+
+# =========================================================
 # VOLUME SPIKE
-# ==========================================
+# =========================================================
 
-df["VolumeMA"] = volume.rolling(20).mean()
+df["Volume_MA"] = (
 
-df["VolumeSpike"] = (
-    volume / df["VolumeMA"]
+    df["Volume"]
+
+    .rolling(20)
+
+    .mean()
+
 )
 
-# ==========================================
-# BODY STRENGTH
-# ==========================================
+df["Volume_Spike"] = (
 
-df["BodyStrength"] = (
-    abs(df["Close"] - df["Open"])
-) / (
-    df["High"] - df["Low"] + 0.0001
+    df["Volume"]
+
+    >
+
+    (df["Volume_MA"] * 2)
+
+).astype(int)
+
+# =========================================================
+# CANDLE FEATURES
+# =========================================================
+
+df["Body"] = abs(
+
+    df["Close"] - df["Open"]
+
 )
 
-# ==========================================
-# TARGET CLASSIFICATION
-# ==========================================
+df["Upper_Wick"] = (
 
-df["TargetDirection"] = np.select(
-    [
-        df["FutureReturn"] > 0.04,
-        df["FutureReturn"] > 0.015,
-        df["FutureReturn"] < -0.04,
-        df["FutureReturn"] < -0.015
-    ],
-    [
-        2,
-        1,
-        -2,
-        -1
-    ],
-    default=0
+    df["High"]
+
+    -
+
+    df[["Close", "Open"]]
+
+    .max(axis=1)
+
 )
 
-# ==========================================
-# TARGET REGRESSION
-# ==========================================
+df["Lower_Wick"] = (
 
-df["TargetPrice"] = close.shift(-future_period)
+    df[["Close", "Open"]]
 
-# ==========================================
+    .min(axis=1)
+
+    -
+
+    df["Low"]
+
+)
+
+# =========================================================
+# TREND REGIME
+# =========================================================
+
+df["Bull_Trend"] = np.where(
+
+    (
+
+        (df["EMA20"] > df["EMA50"])
+
+        &
+
+        (df["EMA50"] > df["EMA200"])
+
+    ),
+
+    1,
+
+    0
+
+)
+
+# =========================================================
+# FUTURE TARGET
+# =========================================================
+
+future_period = 12
+
+df["Future_Close"] = (
+
+    df["Close"]
+
+    .shift(-future_period)
+
+)
+
+future_return = (
+
+    (df["Future_Close"] - df["Close"])
+
+    / df["Close"]
+
+)
+
+# =========================================================
+# MULTI CLASS TARGET
+# =========================================================
+
+conditions = [
+
+    future_return > 0.03,
+
+    (
+
+        (future_return > 0.01)
+
+        &
+
+        (future_return <= 0.03)
+
+    ),
+
+    (
+
+        (future_return >= -0.01)
+
+        &
+
+        (future_return <= 0.01)
+
+    ),
+
+    (
+
+        (future_return < -0.01)
+
+        &
+
+        (future_return >= -0.03)
+
+    ),
+
+    future_return < -0.03
+
+]
+
+choices = [
+
+    4,
+
+    3,
+
+    2,
+
+    1,
+
+    0
+
+]
+
+df["Target"] = np.select(
+
+    conditions,
+
+    choices,
+
+    default=2
+
+)
+
+# =========================================================
 # CLEAN
-# ==========================================
+# =========================================================
+
+df.replace(
+
+    [np.inf, -np.inf],
+
+    np.nan,
+
+    inplace=True
+
+)
 
 df.dropna(inplace=True)
 
-# ==========================================
+# =========================================================
 # FEATURES
-# ==========================================
+# =========================================================
 
 features = [
 
-    "EMA20",
-    "EMA50",
-    "EMA200",
+    "Close",
+
+    "Volume",
+
+    "BTC_Close",
+
+    "BTC_Return",
 
     "RSI",
+
     "MACD",
+
     "MACD_SIGNAL",
 
+    "MACD_DIFF",
+
+    "EMA20",
+
+    "EMA50",
+
+    "EMA200",
+
     "ATR",
+
+    "BB_HIGH",
+
+    "BB_LOW",
+
+    "BB_WIDTH",
+
+    "Returns",
+
     "Volatility",
 
-    "BreakoutStrength",
-
     "Momentum5",
+
     "Momentum10",
 
-    "VolumeSpike",
+    "Higher_High",
 
-    "BullTrend",
+    "Higher_Low",
 
-    "BodyStrength",
+    "Breakout",
 
-    "BB_UPPER",
-    "BB_LOWER"
+    "Volume_Spike",
+
+    "Body",
+
+    "Upper_Wick",
+
+    "Lower_Wick",
+
+    "Bull_Trend"
+
 ]
-
-# ==========================================
-# DATA
-# ==========================================
 
 X = df[features]
 
-y_class = df["TargetDirection"]
+y_class = df["Target"]
 
-y_reg = df["TargetPrice"]
+y_reg = df["Future_Close"]
 
-# ==========================================
-# MODELS
-# ==========================================
+# =========================================================
+# TRAIN TEST SPLIT
+# =========================================================
 
-rf_classifier = RandomForestClassifier(
-    n_estimators=80,
+split = int(len(df) * 0.8)
+
+X_train = X[:split]
+X_test = X[split:]
+
+y_train = y_class[:split]
+y_test = y_class[split:]
+
+y_reg_train = y_reg[:split]
+y_reg_test = y_reg[split:]
+
+# =========================================================
+# CLASSIFIER
+# =========================================================
+
+classifier = XGBClassifier(
+
+    n_estimators=300,
+
     max_depth=8,
-    random_state=42
+
+    learning_rate=0.03,
+
+    subsample=0.9,
+
+    colsample_bytree=0.9,
+
+    gamma=0.2,
+
+    min_child_weight=3,
+
+    random_state=42,
+
+    eval_metric="mlogloss"
+
 )
 
-gb_classifier = GradientBoostingClassifier(
-    n_estimators=120,
-    learning_rate=0.05,
-    random_state=42
-)
+# =========================================================
+# REGRESSOR
+# =========================================================
 
-rf_regressor = RandomForestRegressor(
-    n_estimators=80,
+regressor = XGBRegressor(
+
+    n_estimators=300,
+
     max_depth=8,
+
+    learning_rate=0.03,
+
+    subsample=0.9,
+
+    colsample_bytree=0.9,
+
     random_state=42
+
 )
 
-gb_regressor = GradientBoostingRegressor(
-    n_estimators=120,
-    learning_rate=0.05,
-    random_state=42
-)
-
-# ==========================================
+# =========================================================
 # TRAIN
-# ==========================================
+# =========================================================
 
-rf_classifier.fit(X, y_class)
-gb_classifier.fit(X, y_class)
+classifier.fit(
 
-rf_regressor.fit(X, y_reg)
-gb_regressor.fit(X, y_reg)
+    X_train,
 
-# ==========================================
+    y_train
+
+)
+
+regressor.fit(
+
+    X_train,
+
+    y_reg_train
+
+)
+
+# =========================================================
+# ACCURACY
+# =========================================================
+
+predictions = classifier.predict(
+
+    X_test
+
+)
+
+accuracy = accuracy_score(
+
+    y_test,
+
+    predictions
+
+)
+
+print("\n===================================")
+print("CLASSIFICATION ACCURACY:")
+print(round(accuracy, 4))
+print("===================================")
+
+# =========================================================
 # SAVE MODELS
-# ==========================================
+# =========================================================
 
-joblib.dump(rf_classifier, "rf_classifier.pkl")
-joblib.dump(gb_classifier, "gb_classifier.pkl")
+joblib.dump(
 
-joblib.dump(rf_regressor, "rf_regressor.pkl")
-joblib.dump(gb_regressor, "gb_regressor.pkl")
+    classifier,
 
-joblib.dump(features, "features.pkl")
+    "rf_classifier.pkl"
 
+)
+
+joblib.dump(
+
+    regressor,
+
+    "rf_regressor.pkl"
+
+)
+
+joblib.dump(
+
+    features,
+
+    "features.pkl"
+
+)
+
+print("\n===================================")
 print("ADVANCED AI MODELS TRAINED")
+print("===================================")
+
+print("\nFILES SAVED:")
+
+print("rf_classifier.pkl")
+print("rf_regressor.pkl")
+print("features.pkl")
+
+print("===================================")
