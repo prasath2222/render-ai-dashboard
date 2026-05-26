@@ -1,301 +1,490 @@
-# ==========================================
-# ADVANCED RNDR LIVE PREDICTION ENGINE
-# ==========================================
+# =========================================================
+# FINAL BEST predict.py
+# LIVE RNDR AI PREDICTION
+# =========================================================
 
+import yfinance as yf
 import pandas as pd
 import numpy as np
-import yfinance as yf
+import ta
 import joblib
 
-# ==========================================
+# =========================================================
 # LOAD MODELS
-# ==========================================
+# =========================================================
 
-rf_classifier = joblib.load("rf_classifier.pkl")
-gb_classifier = joblib.load("gb_classifier.pkl")
+classifier = joblib.load(
+    "rf_classifier.pkl"
+)
 
-rf_regressor = joblib.load("rf_regressor.pkl")
-gb_regressor = joblib.load("gb_regressor.pkl")
+regressor = joblib.load(
+    "rf_regressor.pkl"
+)
 
-features = joblib.load("features.pkl")
+features = joblib.load(
+    "features.pkl"
+)
 
-# ==========================================
-# DOWNLOAD LIVE DATA
-# ==========================================
+# =========================================================
+# DOWNLOAD RNDR
+# =========================================================
 
 df = yf.download(
+
     "RENDER-USD",
-    period="30d",
+
+    period="90d",
+
     interval="1h",
-    progress=False
+
+    auto_adjust=True
+
 )
 
-# ==========================================
+# =========================================================
 # FIX COLUMNS
-# ==========================================
+# =========================================================
 
 if isinstance(df.columns, pd.MultiIndex):
+
     df.columns = df.columns.get_level_values(0)
 
-df = df[[
-    "Open",
-    "High",
-    "Low",
-    "Close",
-    "Volume"
-]].copy()
+# =========================================================
+# DOWNLOAD BTC
+# =========================================================
 
-# ==========================================
-# SERIES
-# ==========================================
+btc = yf.download(
 
-close = df["Close"].squeeze()
-high = df["High"].squeeze()
-low = df["Low"].squeeze()
-volume = df["Volume"].squeeze()
+    "BTC-USD",
 
-# ==========================================
-# EMA
-# ==========================================
+    period="90d",
 
-df["EMA20"] = close.ewm(span=20).mean()
-df["EMA50"] = close.ewm(span=50).mean()
-df["EMA200"] = close.ewm(span=200).mean()
+    interval="1h",
 
-# ==========================================
-# RSI
-# ==========================================
+    auto_adjust=True
 
-delta = close.diff()
-
-gain = delta.clip(lower=0)
-loss = -delta.clip(upper=0)
-
-avg_gain = gain.rolling(14).mean()
-avg_loss = loss.rolling(14).mean()
-
-rs = avg_gain / avg_loss
-
-df["RSI"] = 100 - (100 / (1 + rs))
-
-# ==========================================
-# MACD
-# ==========================================
-
-ema12 = close.ewm(span=12).mean()
-ema26 = close.ewm(span=26).mean()
-
-df["MACD"] = ema12 - ema26
-df["MACD_SIGNAL"] = df["MACD"].ewm(span=9).mean()
-
-# ==========================================
-# ATR
-# ==========================================
-
-tr1 = high - low
-tr2 = abs(high - close.shift())
-tr3 = abs(low - close.shift())
-
-tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
-df["ATR"] = tr.rolling(14).mean()
-
-# ==========================================
-# VOLATILITY
-# ==========================================
-
-df["Volatility"] = close.pct_change().rolling(24).std() * 100
-
-# ==========================================
-# BOLLINGER
-# ==========================================
-
-df["BB_MIDDLE"] = close.rolling(20).mean()
-
-std = close.rolling(20).std()
-
-df["BB_UPPER"] = df["BB_MIDDLE"] + (std * 2)
-df["BB_LOWER"] = df["BB_MIDDLE"] - (std * 2)
-
-# ==========================================
-# TREND REGIME
-# ==========================================
-
-df["BullTrend"] = np.where(
-    (
-        (df["EMA20"] > df["EMA50"]) &
-        (df["EMA50"] > df["EMA200"])
-    ),
-    1,
-    0
 )
 
-# ==========================================
-# BREAKOUT STRENGTH
-# ==========================================
+if isinstance(btc.columns, pd.MultiIndex):
 
-df["RecentHigh"] = high.rolling(20).max()
+    btc.columns = btc.columns.get_level_values(0)
 
-df["BreakoutStrength"] = (
-    close - df["RecentHigh"].shift(1)
-) / close
+# =========================================================
+# BTC FEATURES
+# =========================================================
 
-# ==========================================
+df["BTC_Close"] = btc["Close"]
+
+df["BTC_Return"] = (
+
+    df["BTC_Close"]
+
+    .pct_change()
+
+)
+
+# =========================================================
+# RSI
+# =========================================================
+
+df["RSI"] = ta.momentum.RSIIndicator(
+
+    close=df["Close"],
+
+    window=14
+
+).rsi()
+
+# =========================================================
+# MACD
+# =========================================================
+
+macd = ta.trend.MACD(
+
+    close=df["Close"]
+
+)
+
+df["MACD"] = macd.macd()
+
+df["MACD_SIGNAL"] = macd.macd_signal()
+
+df["MACD_DIFF"] = macd.macd_diff()
+
+# =========================================================
+# EMA
+# =========================================================
+
+df["EMA20"] = ta.trend.EMAIndicator(
+
+    close=df["Close"],
+
+    window=20
+
+).ema_indicator()
+
+df["EMA50"] = ta.trend.EMAIndicator(
+
+    close=df["Close"],
+
+    window=50
+
+).ema_indicator()
+
+df["EMA200"] = ta.trend.EMAIndicator(
+
+    close=df["Close"],
+
+    window=200
+
+).ema_indicator()
+
+# =========================================================
+# ATR
+# =========================================================
+
+df["ATR"] = ta.volatility.AverageTrueRange(
+
+    high=df["High"],
+
+    low=df["Low"],
+
+    close=df["Close"],
+
+    window=14
+
+).average_true_range()
+
+# =========================================================
+# BOLLINGER
+# =========================================================
+
+bb = ta.volatility.BollingerBands(
+
+    close=df["Close"],
+
+    window=20
+
+)
+
+df["BB_HIGH"] = bb.bollinger_hband()
+
+df["BB_LOW"] = bb.bollinger_lband()
+
+df["BB_WIDTH"] = bb.bollinger_wband()
+
+# =========================================================
+# RETURNS
+# =========================================================
+
+df["Returns"] = (
+
+    df["Close"]
+
+    .pct_change()
+
+)
+
+# =========================================================
+# VOLATILITY
+# =========================================================
+
+df["Volatility"] = (
+
+    df["Returns"]
+
+    .rolling(24)
+
+    .std()
+
+)
+
+# =========================================================
 # MOMENTUM
-# ==========================================
+# =========================================================
 
 df["Momentum5"] = (
-    close - close.shift(5)
-) / close
+
+    df["Close"]
+
+    - df["Close"].shift(5)
+
+)
 
 df["Momentum10"] = (
-    close - close.shift(10)
-) / close
 
-# ==========================================
+    df["Close"]
+
+    - df["Close"].shift(10)
+
+)
+
+# =========================================================
+# MARKET STRUCTURE
+# =========================================================
+
+df["Higher_High"] = (
+
+    df["High"]
+
+    > df["High"].shift(1)
+
+).astype(int)
+
+df["Higher_Low"] = (
+
+    df["Low"]
+
+    > df["Low"].shift(1)
+
+).astype(int)
+
+# =========================================================
+# BREAKOUT
+# =========================================================
+
+df["Breakout"] = (
+
+    df["Close"]
+
+    >
+
+    df["High"]
+
+    .rolling(20)
+
+    .max()
+
+    .shift(1)
+
+).astype(int)
+
+# =========================================================
 # VOLUME SPIKE
-# ==========================================
+# =========================================================
 
-df["VolumeMA"] = volume.rolling(20).mean()
+df["Volume_MA"] = (
 
-df["VolumeSpike"] = (
-    volume / df["VolumeMA"]
+    df["Volume"]
+
+    .rolling(20)
+
+    .mean()
+
 )
 
-# ==========================================
-# BODY STRENGTH
-# ==========================================
+df["Volume_Spike"] = (
 
-df["BodyStrength"] = (
-    abs(df["Close"] - df["Open"])
-) / (
-    df["High"] - df["Low"] + 0.0001
+    df["Volume"]
+
+    >
+
+    (df["Volume_MA"] * 2)
+
+).astype(int)
+
+# =========================================================
+# CANDLE FEATURES
+# =========================================================
+
+df["Body"] = abs(
+
+    df["Close"] - df["Open"]
+
 )
 
-# ==========================================
+df["Upper_Wick"] = (
+
+    df["High"]
+
+    -
+
+    df[["Close", "Open"]]
+
+    .max(axis=1)
+
+)
+
+df["Lower_Wick"] = (
+
+    df[["Close", "Open"]]
+
+    .min(axis=1)
+
+    -
+
+    df["Low"]
+
+)
+
+# =========================================================
+# TREND REGIME
+# =========================================================
+
+df["Bull_Trend"] = np.where(
+
+    (
+
+        (df["EMA20"] > df["EMA50"])
+
+        &
+
+        (df["EMA50"] > df["EMA200"])
+
+    ),
+
+    1,
+
+    0
+
+)
+
+# =========================================================
 # CLEAN
-# ==========================================
+# =========================================================
+
+df.replace(
+
+    [np.inf, -np.inf],
+
+    np.nan,
+
+    inplace=True
+
+)
 
 df.dropna(inplace=True)
 
-# ==========================================
-# LATEST DATA
-# ==========================================
+# =========================================================
+# LATEST FEATURES
+# =========================================================
 
-latest = df[features].iloc[-1:]
+latest = df.iloc[-1]
 
-# ==========================================
-# CLASSIFICATION
-# ==========================================
+X_live = pd.DataFrame(
+    [[latest[f] for f in features]],
+    columns=features
+)
 
-rf_class = rf_classifier.predict(latest)[0]
-gb_class = gb_classifier.predict(latest)[0]
+# =========================================================
+# PREDICTIONS
+# =========================================================
 
-direction_votes = [
-    rf_class,
-    gb_class
-]
+prediction = classifier.predict(
+    X_live
+)[0]
 
-final_direction = int(round(np.mean(direction_votes)))
+probabilities = classifier.predict_proba(
+    X_live
+)[0]
 
-# ==========================================
-# SIGNAL MAP
-# ==========================================
+confidence = round(
+    np.max(probabilities) * 100,
+    2
+)
 
-signal_map = {
-    2: "STRONG BUY",
-    1: "BUY",
-    0: "SIDEWAYS",
-    -1: "SELL",
-    -2: "STRONG SELL"
+future_price = regressor.predict(
+    X_live
+)[0]
+
+current_price = latest["Close"]
+
+# =========================================================
+# LABELS
+# =========================================================
+
+labels = {
+
+    4: "STRONG BUY 🚀",
+
+    3: "BUY 📈",
+
+    2: "SIDEWAYS ➖",
+
+    1: "SELL 📉",
+
+    0: "STRONG SELL 🔥"
+
 }
 
-signal = signal_map[final_direction]
+signal = labels[prediction]
 
-# ==========================================
-# REGIME FILTER
-# ==========================================
+# =========================================================
+# EXTRA TREND FILTER
+# =========================================================
 
-bull_regime = (
-    df["EMA20"].iloc[-1] >
-    df["EMA50"].iloc[-1] >
-    df["EMA200"].iloc[-1]
-)
+if (
 
-if bull_regime and final_direction < 0:
-    signal = "SIDEWAYS"
+    latest["EMA20"]
+    >
+    latest["EMA50"]
 
-# ==========================================
-# MOMENTUM OVERRIDE
-# ==========================================
+    and
 
-recent_momentum = df["Momentum5"].iloc[-1]
+    latest["EMA50"]
+    >
+    latest["EMA200"]
 
-if recent_momentum > 0.03:
-    signal = "STRONG BUY"
+    and
 
-if recent_momentum < -0.03:
-    signal = "STRONG SELL"
+    latest["RSI"] > 58
 
-# ==========================================
-# BREAKOUT OVERRIDE
-# ==========================================
+    and
 
-breakout = df["BreakoutStrength"].iloc[-1]
+    latest["Breakout"] == 1
 
-if breakout > 0.02:
-    signal = "BREAKOUT BUY"
+):
 
-# ==========================================
-# REGRESSION
-# ==========================================
+    signal = "BULLISH BREAKOUT 🚀"
 
-rf_price = rf_regressor.predict(latest)[0]
-gb_price = gb_regressor.predict(latest)[0]
+# =========================================================
+# BEARISH FILTER
+# =========================================================
 
-predicted_price = (
-    rf_price + gb_price
-) / 2
+elif (
 
-# ==========================================
-# CURRENT PRICE
-# ==========================================
+    latest["EMA20"]
+    <
+    latest["EMA50"]
 
-current_price = float(close.iloc[-1])
+    and
 
-# ==========================================
-# PRICE RANGE
-# ==========================================
+    latest["EMA50"]
+    <
+    latest["EMA200"]
 
-atr = float(df["ATR"].iloc[-1])
+    and
 
-pred_low = current_price - atr
-pred_high = current_price + atr
+    latest["RSI"] < 40
 
-# ==========================================
-# CONFIDENCE
-# ==========================================
+):
 
-confidence = min(
-    95,
-    round(
-        abs(predicted_price - current_price)
-        / current_price * 100 * 12,
-        2
-    )
-)
+    signal = "BEARISH TREND 🔥"
 
-# ==========================================
+# =========================================================
+# TARGET RANGE
+# =========================================================
+
+upper_target = current_price * 1.06
+
+lower_target = current_price * 0.97
+
+# =========================================================
 # OUTPUT
-# ==========================================
+# =========================================================
 
-result = {
-    "current_price": round(current_price, 4),
-    "signal": signal,
-    "predicted_price": round(predicted_price, 4),
-    "pred_low": round(pred_low, 4),
-    "pred_high": round(pred_high, 4),
-    "confidence": confidence
-}
+print("\n===================================")
+print("LIVE RNDR AI PREDICTION")
+print("===================================")
 
-print(result)
+print(f"\nCurrent Price : ${current_price:.4f}")
+
+print(f"\nPredicted Price : ${future_price:.4f}")
+
+print(f"\nAI Signal : {signal}")
+
+print(f"\nConfidence : {confidence}%")
+
+print(f"\nExpected Range : ${lower_target:.4f} → ${upper_target:.4f}")
+
+print("===================================")
