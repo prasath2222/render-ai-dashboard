@@ -1,6 +1,5 @@
 # =========================================================
-# FINAL BEST predict.py
-# LIVE RNDR AI PREDICTION
+# PREDICT.PY
 # =========================================================
 
 import yfinance as yf
@@ -14,26 +13,32 @@ import joblib
 # =========================================================
 
 classifier = joblib.load(
+
     "rf_classifier.pkl"
+
 )
 
 regressor = joblib.load(
+
     "rf_regressor.pkl"
+
 )
 
 features = joblib.load(
+
     "features.pkl"
+
 )
 
 # =========================================================
-# DOWNLOAD RNDR
+# DOWNLOAD RNDR DATA
 # =========================================================
 
 df = yf.download(
 
     "RENDER-USD",
 
-    period="90d",
+    period="30d",
 
     interval="1h",
 
@@ -57,7 +62,7 @@ btc = yf.download(
 
     "BTC-USD",
 
-    period="90d",
+    period="30d",
 
     interval="1h",
 
@@ -140,6 +145,18 @@ df["EMA200"] = ta.trend.EMAIndicator(
 ).ema_indicator()
 
 # =========================================================
+# SMA
+# =========================================================
+
+df["SMA20"] = ta.trend.SMAIndicator(
+
+    close=df["Close"],
+
+    window=20
+
+).sma_indicator()
+
+# =========================================================
 # ATR
 # =========================================================
 
@@ -172,6 +189,28 @@ df["BB_HIGH"] = bb.bollinger_hband()
 df["BB_LOW"] = bb.bollinger_lband()
 
 df["BB_WIDTH"] = bb.bollinger_wband()
+
+# =========================================================
+# STOCH
+# =========================================================
+
+stoch = ta.momentum.StochasticOscillator(
+
+    high=df["High"],
+
+    low=df["Low"],
+
+    close=df["Close"],
+
+    window=14,
+
+    smooth_window=3
+
+)
+
+df["STOCH"] = stoch.stoch()
+
+df["STOCH_SIGNAL"] = stoch.stoch_signal()
 
 # =========================================================
 # RETURNS
@@ -220,26 +259,6 @@ df["Momentum10"] = (
 )
 
 # =========================================================
-# MARKET STRUCTURE
-# =========================================================
-
-df["Higher_High"] = (
-
-    df["High"]
-
-    > df["High"].shift(1)
-
-).astype(int)
-
-df["Higher_Low"] = (
-
-    df["Low"]
-
-    > df["Low"].shift(1)
-
-).astype(int)
-
-# =========================================================
 # BREAKOUT
 # =========================================================
 
@@ -260,7 +279,7 @@ df["Breakout"] = (
 ).astype(int)
 
 # =========================================================
-# VOLUME SPIKE
+# VOLUME
 # =========================================================
 
 df["Volume_MA"] = (
@@ -279,46 +298,12 @@ df["Volume_Spike"] = (
 
     >
 
-    (df["Volume_MA"] * 2)
+    (df["Volume_MA"] * 1.5)
 
 ).astype(int)
 
 # =========================================================
-# CANDLE FEATURES
-# =========================================================
-
-df["Body"] = abs(
-
-    df["Close"] - df["Open"]
-
-)
-
-df["Upper_Wick"] = (
-
-    df["High"]
-
-    -
-
-    df[["Close", "Open"]]
-
-    .max(axis=1)
-
-)
-
-df["Lower_Wick"] = (
-
-    df[["Close", "Open"]]
-
-    .min(axis=1)
-
-    -
-
-    df["Low"]
-
-)
-
-# =========================================================
-# TREND REGIME
+# TREND
 # =========================================================
 
 df["Bull_Trend"] = np.where(
@@ -356,135 +341,83 @@ df.replace(
 df.dropna(inplace=True)
 
 # =========================================================
-# LATEST FEATURES
+# LATEST ROW
 # =========================================================
 
-latest = df.iloc[-1]
-
-X_live = pd.DataFrame(
-    [[latest[f] for f in features]],
-    columns=features
-)
+latest = df[features].iloc[-1:]
 
 # =========================================================
-# PREDICTIONS
+# CLASSIFICATION PREDICTION
 # =========================================================
 
-prediction = classifier.predict(
-    X_live
+class_prediction = classifier.predict(
+
+    latest
+
 )[0]
 
-probabilities = classifier.predict_proba(
-    X_live
-)[0]
-
-confidence = round(
-    np.max(probabilities) * 100,
-    2
-)
+# =========================================================
+# REGRESSION PREDICTION
+# =========================================================
 
 future_price = regressor.predict(
-    X_live
+
+    latest
+
 )[0]
 
-current_price = latest["Close"]
+# =========================================================
+# CURRENT PRICE
+# =========================================================
+
+current_price = float(
+
+    df["Close"].iloc[-1]
+
+)
+
+# =========================================================
+# CONFIDENCE
+# =========================================================
+
+confidence = np.max(
+
+    classifier.predict_proba(latest)
+
+) * 100
 
 # =========================================================
 # LABELS
 # =========================================================
 
-labels = {
+if class_prediction == 2:
 
-    4: "STRONG BUY 🚀",
+    movement = "BULLISH 🚀"
 
-    3: "BUY 📈",
+elif class_prediction == 0:
 
-    2: "SIDEWAYS ➖",
+    movement = "BEARISH 🔻"
 
-    1: "SELL 📉",
+else:
 
-    0: "STRONG SELL 🔥"
-
-}
-
-signal = labels[prediction]
-
-# =========================================================
-# EXTRA TREND FILTER
-# =========================================================
-
-if (
-
-    latest["EMA20"]
-    >
-    latest["EMA50"]
-
-    and
-
-    latest["EMA50"]
-    >
-    latest["EMA200"]
-
-    and
-
-    latest["RSI"] > 58
-
-    and
-
-    latest["Breakout"] == 1
-
-):
-
-    signal = "BULLISH BREAKOUT 🚀"
-
-# =========================================================
-# BEARISH FILTER
-# =========================================================
-
-elif (
-
-    latest["EMA20"]
-    <
-    latest["EMA50"]
-
-    and
-
-    latest["EMA50"]
-    <
-    latest["EMA200"]
-
-    and
-
-    latest["RSI"] < 40
-
-):
-
-    signal = "BEARISH TREND 🔥"
-
-# =========================================================
-# TARGET RANGE
-# =========================================================
-
-upper_target = current_price * 1.06
-
-lower_target = current_price * 0.97
+    movement = "SIDEWAYS ➖"
 
 # =========================================================
 # OUTPUT
 # =========================================================
 
 print("\n===================================")
-print("LIVE RNDR AI PREDICTION")
+
+print("RNDR AI PREDICTION")
+
 print("===================================")
 
 print(f"\nCurrent Price : ${current_price:.4f}")
 
 print(f"\nPredicted Price : ${future_price:.4f}")
 
-print(f"\nAI Signal : {signal}")
+print(f"\nMarket Direction : {movement}")
 
-print(f"\nConfidence : {confidence}%")
+print(f"\nConfidence : {confidence:.2f}%")
 
-print(f"\nExpected Range : ${lower_target:.4f} → ${upper_target:.4f}")
-
-print("===================================")
+print("\n===================================")
