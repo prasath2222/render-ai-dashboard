@@ -1,6 +1,6 @@
 # =========================================================
 # RNDR AI DASHBOARD
-# FULL FIXED APP.PY
+# FULL FINAL FIXED APP.PY
 # =========================================================
 
 import streamlit as st
@@ -13,7 +13,7 @@ import joblib
 from plotly import graph_objects as go
 
 # =========================================================
-# PAGE CONFIG
+# PAGE
 # =========================================================
 
 st.set_page_config(
@@ -29,7 +29,7 @@ classifier = joblib.load("rf_classifier.pkl")
 regressor = joblib.load("rf_regressor.pkl")
 
 # =========================================================
-# CUSTOM CSS
+# CSS
 # =========================================================
 
 st.markdown(
@@ -41,17 +41,16 @@ st.markdown(
         color:white;
     }
 
-    .main-title{
+    .title{
         font-size:60px;
         font-weight:900;
         color:white;
-        margin-bottom:10px;
     }
 
-    .sub{
+    .subtitle{
         color:#9ca3af;
-        font-size:22px;
-        margin-bottom:40px;
+        font-size:20px;
+        margin-bottom:30px;
     }
 
     .card{
@@ -68,7 +67,7 @@ st.markdown(
 
     .metric-value{
         color:white;
-        font-size:42px;
+        font-size:40px;
         font-weight:800;
     }
 
@@ -93,28 +92,45 @@ st.markdown(
 )
 
 # =========================================================
-# DOWNLOAD DATA
+# DOWNLOAD RNDR DATA
 # =========================================================
 
 df = yf.download(
     "RNDR-USD",
     period="90d",
-    interval="1h"
+    interval="1h",
+    auto_adjust=True
 )
+
+# FIX COLUMNS
+df.columns = [
+    col[0] if isinstance(col, tuple)
+    else col
+    for col in df.columns
+]
 
 df.dropna(inplace=True)
 
 # =========================================================
-# INR PRICE
+# USD INR
 # =========================================================
 
 usd_inr = yf.download(
     "INR=X",
-    period="1d",
-    interval="1d"
+    period="5d",
+    interval="1d",
+    auto_adjust=True
 )
 
-usd_inr_rate = float(usd_inr["Close"].iloc[-1])
+usd_inr.columns = [
+    col[0] if isinstance(col, tuple)
+    else col
+    for col in usd_inr.columns
+]
+
+usd_inr_rate = float(
+    usd_inr["Close"].dropna().values[-1]
+)
 
 # =========================================================
 # INDICATORS
@@ -153,7 +169,9 @@ df["MACD_SIGNAL"] = macd.macd_signal()
 
 df["MACD_DIFF"] = macd.macd_diff()
 
-bb = ta.volatility.BollingerBands(df["Close"])
+bb = ta.volatility.BollingerBands(
+    df["Close"]
+)
 
 df["BB_HIGH"] = bb.bollinger_hband()
 
@@ -278,14 +296,17 @@ signal_class = classifier.predict(latest)[0]
 # =========================================================
 
 if signal_class == 2:
+
     signal = "BULLISH 🚀"
     signal_classname = "buy"
 
 elif signal_class == 1:
+
     signal = "SIDEWAYS ⚪"
     signal_classname = "sideways"
 
 else:
+
     signal = "BEARISH 🔻"
     signal_classname = "sell"
 
@@ -293,9 +314,13 @@ else:
 # LIVE PRICE
 # =========================================================
 
-current_price = float(df["Close"].iloc[-1])
+current_price = float(
+    df["Close"].iloc[-1]
+)
 
-previous_price = float(df["Close"].iloc[-2])
+previous_price = float(
+    df["Close"].iloc[-2]
+)
 
 change_percent = (
     (current_price - previous_price)
@@ -310,8 +335,8 @@ price_inr = current_price * usd_inr_rate
 
 st.markdown(
     """
-    <div class='main-title'>
-    RNDR AI Trading Dashboard
+    <div class='title'>
+    RNDR AI Prediction Dashboard
     </div>
     """,
     unsafe_allow_html=True
@@ -319,7 +344,7 @@ st.markdown(
 
 st.markdown(
     """
-    <div class='sub'>
+    <div class='subtitle'>
     Live AI Market Analysis • Trading Setup • Technical Indicators
     </div>
     """,
@@ -327,7 +352,7 @@ st.markdown(
 )
 
 # =========================================================
-# METRICS
+# TOP METRICS
 # =========================================================
 
 col1, col2, col3, col4 = st.columns(4)
@@ -337,13 +362,8 @@ with col1:
     st.markdown(
         f"""
         <div class='card'>
-            <div class='metric-title'>
-            RNDR Price USD
-            </div>
-
-            <div class='metric-value'>
-            ${current_price:.4f}
-            </div>
+        <div class='metric-title'>RNDR USD</div>
+        <div class='metric-value'>${current_price:.4f}</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -354,13 +374,8 @@ with col2:
     st.markdown(
         f"""
         <div class='card'>
-            <div class='metric-title'>
-            RNDR Price INR
-            </div>
-
-            <div class='metric-value'>
-            ₹{price_inr:.2f}
-            </div>
+        <div class='metric-title'>RNDR INR</div>
+        <div class='metric-value'>₹{price_inr:.2f}</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -371,13 +386,8 @@ with col3:
     st.markdown(
         f"""
         <div class='card'>
-            <div class='metric-title'>
-            AI Predicted Price
-            </div>
-
-            <div class='metric-value'>
-            ${predicted_price:.4f}
-            </div>
+        <div class='metric-title'>AI Prediction</div>
+        <div class='metric-value'>${predicted_price:.4f}</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -388,13 +398,8 @@ with col4:
     st.markdown(
         f"""
         <div class='card'>
-            <div class='metric-title'>
-            Confidence
-            </div>
-
-            <div class='metric-value'>
-            {confidence:.2f}%
-            </div>
+        <div class='metric-title'>Confidence</div>
+        <div class='metric-value'>{confidence:.2f}%</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -410,22 +415,22 @@ st.markdown(
     f"""
     <div class='card'>
 
-        <div class='metric-title'>
-        AI Trading Signal
-        </div>
+    <div class='metric-title'>
+    AI Trading Signal
+    </div>
 
-        <div class='metric-value {signal_classname}'>
-        {signal}
-        </div>
+    <div class='metric-value {signal_classname}'>
+    {signal}
+    </div>
 
-        <br>
+    <br>
 
-        <div style='font-size:22px;color:white;'>
+    <div style='font-size:24px;color:white;'>
 
-        Live Change :
-        {change_percent:.2f}%
+    Live Change :
+    {change_percent:.2f}%
 
-        </div>
+    </div>
 
     </div>
     """,
@@ -433,15 +438,14 @@ st.markdown(
 )
 
 # =========================================================
-# TRADINGVIEW CHART
+# TRADINGVIEW
 # =========================================================
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-st.subheader("RNDR Live TradingView Chart")
+st.subheader("Live TradingView Chart")
 
 tradingview_widget = """
-<!-- TradingView Widget BEGIN -->
 <div class="tradingview-widget-container">
   <div id="tradingview_chart"></div>
 
@@ -452,26 +456,23 @@ tradingview_widget = """
 
   new TradingView.widget(
   {
-  "width": "100%",
-  "height": 700,
-  "symbol": "BINANCE:RNDRUSDT",
-  "interval": "60",
-  "timezone": "Asia/Kolkata",
-  "theme": "dark",
-  "style": "1",
-  "locale": "en",
-  "toolbar_bg": "#111827",
-  "enable_publishing": false,
-  "hide_side_toolbar": false,
-  "allow_symbol_change": true,
-  "container_id": "tradingview_chart"
-}
+    "width": "100%",
+    "height": 700,
+    "symbol": "BINANCE:RNDRUSDT",
+    "interval": "60",
+    "timezone": "Asia/Kolkata",
+    "theme": "dark",
+    "style": "1",
+    "locale": "en",
+    "toolbar_bg": "#111827",
+    "enable_publishing": false,
+    "allow_symbol_change": true,
+    "container_id": "tradingview_chart"
+  }
   );
 
   </script>
-
 </div>
-<!-- TradingView Widget END -->
 """
 
 st.components.v1.html(
