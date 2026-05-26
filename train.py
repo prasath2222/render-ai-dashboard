@@ -481,7 +481,7 @@ y_reg_test = y_reg[split:]
 
 classifier = RandomForestClassifier(
 
-    n_estimators=500,
+    n_estimators=400,
 
     max_depth=12,
 
@@ -496,14 +496,14 @@ classifier = RandomForestClassifier(
 )
 
 # =========================================================
-# REGRESSOR MODEL
+# SMALLER REGRESSOR MODEL
 # =========================================================
 
 regressor = RandomForestRegressor(
 
-    n_estimators=300,
+    n_estimators=120,
 
-    max_depth=10,
+    max_depth=8,
 
     random_state=42,
 
