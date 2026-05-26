@@ -4,17 +4,22 @@ import numpy as np
 import yfinance as yf
 import ta
 import plotly.graph_objects as go
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
-from xgboost import XGBClassifier, XGBRegressor
+
 from streamlit_autorefresh import st_autorefresh
 
-# ---------------- PAGE ----------------
+# ---------------- PAGE CONFIG ----------------
 
 st.set_page_config(
     page_title="RNDR AI Dashboard",
     layout="wide"
 )
+
+# ---------------- AUTO REFRESH ----------------
 
 st_autorefresh(interval=30000, key="refresh")
 
@@ -28,21 +33,26 @@ html, body, [class*="css"] {
     color: white;
 }
 
+.block-container {
+    padding-top: 1rem;
+    max-width: 100%;
+}
+
 .metric-card {
     background: #161b22;
-    padding: 20px;
-    border-radius: 15px;
+    padding: 22px;
+    border-radius: 18px;
     text-align: center;
-    box-shadow: 0 0 15px rgba(0,255,255,0.08);
+    box-shadow: 0 0 18px rgba(0,255,255,0.08);
 }
 
 .metric-title {
-    font-size: 18px;
     color: #9ca3af;
+    font-size: 18px;
 }
 
 .metric-value {
-    font-size: 32px;
+    font-size: 34px;
     font-weight: bold;
 }
 
@@ -64,7 +74,7 @@ st.title("🚀 RNDR AI Dashboard")
 # ---------------- DATA ----------------
 
 df = yf.download(
-    "RNDR-USD",
+    "RENDER-USD",
     period="90d",
     interval="1h",
     auto_adjust=True
@@ -74,10 +84,20 @@ df.dropna(inplace=True)
 
 # ---------------- INDICATORS ----------------
 
-df["EMA20"] = ta.trend.ema_indicator(df["Close"], window=20)
-df["EMA50"] = ta.trend.ema_indicator(df["Close"], window=50)
+df["EMA20"] = ta.trend.ema_indicator(
+    df["Close"],
+    window=20
+)
 
-df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
+df["EMA50"] = ta.trend.ema_indicator(
+    df["Close"],
+    window=50
+)
+
+df["RSI"] = ta.momentum.rsi(
+    df["Close"],
+    window=14
+)
 
 macd = ta.trend.MACD(df["Close"])
 
@@ -92,7 +112,11 @@ df["ATR"] = ta.volatility.average_true_range(
 )
 
 df["Volatility"] = (
-    df["Close"].pct_change().rolling(24).std() * 100
+    df["Close"]
+    .pct_change()
+    .rolling(24)
+    .std()
+    * 100
 )
 
 # ---------------- TARGETS ----------------
@@ -139,24 +163,23 @@ _, _, y_train_reg, y_test_reg = train_test_split(
 
 # ---------------- MODELS ----------------
 
-clf = XGBClassifier(
+clf = RandomForestClassifier(
     n_estimators=100,
-    max_depth=5,
-    learning_rate=0.1
+    random_state=42
 )
 
-reg = XGBRegressor(
+reg = RandomForestRegressor(
     n_estimators=100,
-    max_depth=5,
-    learning_rate=0.1
+    random_state=42
 )
 
 clf.fit(X_train, y_train_class)
+
 reg.fit(X_train, y_train_reg)
 
 # ---------------- PREDICTIONS ----------------
 
-latest_features = X.iloc[-1:].values
+latest_features = X.iloc[-1:]
 
 direction_pred = clf.predict(latest_features)[0]
 
@@ -169,10 +192,6 @@ accuracy = accuracy_score(
     clf.predict(X_test)
 )
 
-# ---------------- LIVE PRICE ----------------
-
-current_price = float(df["Close"].iloc[-1])
-
 # ---------------- SIGNAL ----------------
 
 if direction_pred == 1:
@@ -184,7 +203,11 @@ else:
     signal_color = "red"
     confidence = direction_prob[0] * 100
 
-# ---------------- METRICS ----------------
+# ---------------- LIVE PRICE ----------------
+
+current_price = float(df["Close"].iloc[-1])
+
+# ---------------- CARDS ----------------
 
 c1, c2, c3, c4 = st.columns(4)
 
@@ -192,7 +215,9 @@ with c1:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">RNDR Price</div>
-        <div class="metric-value">${current_price:.2f}</div>
+        <div class="metric-value">
+            ${current_price:.2f}
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -200,7 +225,9 @@ with c2:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">AI Direction</div>
-        <div class="metric-value {signal_color}">{signal}</div>
+        <div class="metric-value {signal_color}">
+            {signal}
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -208,7 +235,9 @@ with c3:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">Predicted Price</div>
-        <div class="metric-value">${predicted_price:.2f}</div>
+        <div class="metric-value">
+            ${predicted_price:.2f}
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -216,7 +245,9 @@ with c4:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">Confidence</div>
-        <div class="metric-value">{confidence:.1f}%</div>
+        <div class="metric-value">
+            {confidence:.1f}%
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -231,7 +262,7 @@ fig.add_trace(go.Scatter(
     y=df["Close"],
     mode="lines",
     name="Price",
-    line=dict(color="white")
+    line=dict(color="white", width=2)
 ))
 
 fig.add_trace(go.Scatter(
@@ -239,7 +270,7 @@ fig.add_trace(go.Scatter(
     y=df["EMA20"],
     mode="lines",
     name="EMA20",
-    line=dict(color="cyan")
+    line=dict(color="cyan", width=2)
 ))
 
 fig.add_trace(go.Scatter(
@@ -247,13 +278,15 @@ fig.add_trace(go.Scatter(
     y=df["EMA50"],
     mode="lines",
     name="EMA50",
-    line=dict(color="orange")
+    line=dict(color="orange", width=2)
 ))
 
 fig.update_layout(
     template="plotly_dark",
     height=600,
-    xaxis_rangeslider_visible=False
+    xaxis_rangeslider_visible=False,
+    paper_bgcolor="#161b22",
+    plot_bgcolor="#161b22"
 )
 
 st.plotly_chart(fig, use_container_width=True)
@@ -268,7 +301,7 @@ rsi_fig.add_trace(go.Scatter(
     x=df.index,
     y=df["RSI"],
     mode="lines",
-    line=dict(color="blue")
+    line=dict(color="blue", width=3)
 ))
 
 rsi_fig.update_layout(
@@ -288,14 +321,14 @@ macd_fig.add_trace(go.Scatter(
     x=df.index,
     y=df["MACD"],
     mode="lines",
-    line=dict(color="pink")
+    line=dict(color="pink", width=3)
 ))
 
 macd_fig.add_trace(go.Scatter(
     x=df.index,
     y=df["MACD_SIGNAL"],
     mode="lines",
-    line=dict(color="white")
+    line=dict(color="white", width=2)
 ))
 
 macd_fig.update_layout(
@@ -305,7 +338,47 @@ macd_fig.update_layout(
 
 st.plotly_chart(macd_fig, use_container_width=True)
 
-# ---------------- MODEL INFO ----------------
+# ---------------- ATR ----------------
+
+st.subheader("ATR")
+
+atr_fig = go.Figure()
+
+atr_fig.add_trace(go.Scatter(
+    x=df.index,
+    y=df["ATR"],
+    mode="lines",
+    line=dict(color="yellow", width=3)
+))
+
+atr_fig.update_layout(
+    template="plotly_dark",
+    height=300
+)
+
+st.plotly_chart(atr_fig, use_container_width=True)
+
+# ---------------- VOLATILITY ----------------
+
+st.subheader("Volatility")
+
+vol_fig = go.Figure()
+
+vol_fig.add_trace(go.Scatter(
+    x=df.index,
+    y=df["Volatility"],
+    mode="lines",
+    line=dict(color="green", width=3)
+))
+
+vol_fig.update_layout(
+    template="plotly_dark",
+    height=300
+)
+
+st.plotly_chart(vol_fig, use_container_width=True)
+
+# ---------------- ACCURACY ----------------
 
 st.subheader("AI Model Accuracy")
 
@@ -314,4 +387,5 @@ st.write(f"Classification Accuracy: {accuracy:.2f}")
 # ---------------- FOOTER ----------------
 
 st.markdown("---")
-st.caption("RNDR AI Dashboard • XGBoost + Streamlit")
+
+st.caption("RNDR AI Dashboard • RandomForest ML + Streamlit")
