@@ -1,8 +1,7 @@
+streamlit
 yfinance
 pandas
 numpy
 ta
 scikit-learn
 joblib
-streamlit
-plotly
