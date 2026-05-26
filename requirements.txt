@@ -6,3 +6,4 @@ ta
 scikit-learn
 joblib
 plotly
+streamlit-autorefresh
