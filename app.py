@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 """
-RENDER AI Trading Dashboard — Advanced Streamlit App
-=====================================================
-✓ Live OHLCV data with real-time updates
-✓ TradingView candlestick charts
-✓ ML Classification + Regression predictions
-✓ Technical indicators (RSI, MACD, ADX, ATR, Bollinger Bands)
-✓ Support/Resistance levels
-✓ Order setup (Entry, TP, SL, Risk/Reward)
+RENDER AI TRADING DASHBOARD — Professional Advanced UI
+======================================================
+✓ TradingView-style interactive candlestick charts
+✓ Clean separated sections with proper sizing
+✓ Professional dark theme matching reference
+✓ Proper chart zoom/pan/reset functionality
 ✓ Multi-timeframe analysis
-✓ Market sentiment & volume analysis
-✓ Advanced modern UI with dark theme
-✓ Performance metrics & history tracking
+✓ Advanced metrics layout
+✓ Real-time data updates
 """
 
 import streamlit as st
@@ -21,123 +18,204 @@ import yfinance as yf
 import ta
 import joblib
 import plotly.graph_objects as go
-import plotly.express as px
+from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import time
-from scipy import stats
-import json
 import os
-from pathlib import Path
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE CONFIG
 # ═══════════════════════════════════════════════════════════════
 st.set_page_config(
     page_title="RENDER AI Trading Dashboard",
-    page_icon="📊",
+    page_icon="🚀",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ═══════════════════════════════════════════════════════════════
-# CUSTOM CSS - DARK THEME
+# CUSTOM CSS - PROFESSIONAL DARK THEME (Like TradingView)
 # ═══════════════════════════════════════════════════════════════
 st.markdown("""
     <style>
     :root {
-        --primary: #00d4ff;
-        --secondary: #00ff88;
-        --danger: #ff4d6d;
-        --warning: #ffaa00;
-        --success: #00ff88;
-        --dark: #0a0e27;
-        --darker: #050812;
-        --text: #e0e0e0;
+        --primary: #1f2937;
+        --secondary: #111827;
+        --accent: #00d4ff;
+        --success: #10b981;
+        --danger: #ef4444;
+        --warning: #f59e0b;
+        --text: #f3f4f6;
+        --text-secondary: #d1d5db;
     }
     
     * {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    
+    html, body, [data-testid="stAppViewContainer"] {
+        background-color: #0f172a;
         color: var(--text);
+    }
+    
+    [data-testid="stSidebar"] {
+        background-color: #111827;
     }
     
     .main {
-        background-color: var(--darker);
-        color: var(--text);
+        background-color: #0f172a;
     }
     
+    /* Metrics */
     [data-testid="stMetricValue"] {
-        color: var(--primary);
-        font-size: 32px;
+        color: var(--accent);
+        font-size: 28px;
+        font-weight: 700;
     }
     
     [data-testid="stMetricLabel"] {
-        color: var(--text);
-        font-size: 14px;
+        color: var(--text-secondary);
+        font-size: 13px;
     }
     
-    .metric-box {
-        background: linear-gradient(135deg, #1a1f3a 0%, #16213e 100%);
-        border: 1px solid var(--primary);
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-        box-shadow: 0 8px 32px rgba(0, 212, 255, 0.1);
-    }
-    
-    .signal-buy {
-        background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(0, 255, 136, 0.05) 100%);
-        border: 2px solid var(--success);
-        color: var(--success);
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-        font-size: 20px;
-        font-weight: bold;
-    }
-    
-    .signal-sell {
-        background: linear-gradient(135deg, rgba(255, 77, 109, 0.1) 0%, rgba(255, 77, 109, 0.05) 100%);
-        border: 2px solid var(--danger);
-        color: var(--danger);
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-        font-size: 20px;
-        font-weight: bold;
-    }
-    
-    .signal-hold {
-        background: linear-gradient(135deg, rgba(255, 170, 0, 0.1) 0%, rgba(255, 170, 0, 0.05) 100%);
-        border: 2px solid var(--warning);
-        color: var(--warning);
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-        font-size: 20px;
-        font-weight: bold;
-    }
-    
-    .info-box {
-        background: linear-gradient(135deg, #1a1f3a 0%, #16213e 100%);
-        border-left: 4px solid var(--primary);
-        border-radius: 8px;
-        padding: 15px;
-        margin: 10px 0;
-    }
-    
+    /* Tabs */
     .stTabs [data-baseweb="tab-list"] {
         background-color: transparent;
-        gap: 8px;
+        border-bottom: 1px solid #1f2937;
     }
     
     .stTabs [data-baseweb="tab"] {
-        border-radius: 8px 8px 0 0;
-        background-color: #1a1f3a;
-        border: 1px solid #333;
+        color: var(--text-secondary);
+        border-radius: 0;
+        border: none;
+        background-color: transparent;
     }
     
     .stTabs [aria-selected="true"] {
-        background-color: var(--primary);
-        color: var(--darker);
+        border-bottom: 3px solid var(--accent);
+        color: var(--accent);
+    }
+    
+    /* Headers */
+    h1, h2, h3 {
+        color: var(--text);
+        font-weight: 700;
+    }
+    
+    /* Input fields */
+    .stSelectbox, .stSlider, .stCheckbox {
+        color: var(--text);
+    }
+    
+    /* Sections */
+    .section-header {
+        color: var(--text);
+        font-size: 16px;
+        font-weight: 700;
+        margin-top: 20px;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #1f2937;
+    }
+    
+    .metric-box {
+        background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+        border: 1px solid #374151;
+        border-radius: 8px;
+        padding: 15px;
+        text-align: center;
+    }
+    
+    .metric-box-title {
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+    }
+    
+    .metric-box-value {
+        color: var(--accent);
+        font-size: 24px;
+        font-weight: 700;
+    }
+    
+    .metric-box-change {
+        color: var(--text-secondary);
+        font-size: 12px;
+        margin-top: 5px;
+    }
+    
+    /* Signal boxes */
+    .signal-buy {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.05) 100%);
+        border: 2px solid #10b981;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+    }
+    
+    .signal-sell {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%);
+        border: 2px solid #ef4444;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+    }
+    
+    .signal-hold {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%);
+        border: 2px solid #f59e0b;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+    }
+    
+    .signal-text {
+        font-size: 24px;
+        font-weight: 700;
+        margin: 10px 0;
+    }
+    
+    .confidence-text {
+        font-size: 12px;
+        margin-top: 8px;
+    }
+    
+    /* Info boxes */
+    .info-section {
+        background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+        border: 1px solid #374151;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 12px;
+    }
+    
+    .info-section-title {
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+    }
+    
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #374151;
+    }
+    
+    .info-label {
+        color: var(--text-secondary);
+        font-size: 12px;
+    }
+    
+    .info-value {
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 600;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -146,53 +224,54 @@ st.markdown("""
 # SIDEBAR - CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("### ⚙️ Configuration")
-    
-    # Symbol selection
-    symbol = st.selectbox(
-        "Select Token",
-        ["RENDER-USD", "RNDR-USD", "BTC-USD", "ETH-USD"],
-        index=0
-    )
+    st.markdown("### ⚙️ RENDER SETTINGS")
+    st.divider()
     
     # Timeframe selection
     timeframe = st.select_slider(
-        "Candlestick Timeframe",
+        "📊 Candlestick Timeframe",
         options=["1m", "5m", "15m", "1h", "4h", "1d"],
         value="1h"
     )
     
     # Data period
     period = st.select_slider(
-        "Historical Data Period",
+        "📈 Historical Data",
         options=["7d", "30d", "90d", "180d", "365d"],
         value="90d"
     )
     
-    # Technical indicators
-    st.markdown("### 📊 Indicators")
-    show_macd = st.checkbox("MACD", value=True)
-    show_rsi = st.checkbox("RSI", value=True)
-    show_bb = st.checkbox("Bollinger Bands", value=True)
-    show_adx = st.checkbox("ADX", value=True)
-    show_vwap = st.checkbox("VWAP", value=True)
+    st.divider()
+    st.markdown("### 📊 INDICATORS")
     
-    # ML Model settings
-    st.markdown("### 🤖 ML Model")
-    use_ensemble = st.checkbox("Use Ensemble Model", value=True)
-    confidence_threshold = st.slider("Min Confidence", 50, 100, 65)
+    col1, col2 = st.columns(2)
+    with col1:
+        show_macd = st.checkbox("MACD", value=True)
+        show_rsi = st.checkbox("RSI", value=True)
+        show_bb = st.checkbox("BB Bands", value=True)
+    with col2:
+        show_adx = st.checkbox("ADX", value=True)
+        show_vwap = st.checkbox("VWAP", value=True)
+        show_obv = st.checkbox("OBV", value=True)
     
-    # Auto-refresh
-    st.markdown("### 🔄 Auto-Refresh")
-    auto_refresh = st.checkbox("Enable Auto-Refresh", value=True)
-    refresh_interval = st.slider("Refresh Interval (seconds)", 30, 300, 60)
+    st.divider()
+    st.markdown("### 🤖 ML MODEL")
+    
+    use_ensemble = st.checkbox("🤖 Use Ensemble Model", value=True)
+    confidence_threshold = st.slider("📍 Min Confidence", 50, 100, 65)
+    
+    st.divider()
+    st.markdown("### 🔄 AUTO-REFRESH")
+    
+    auto_refresh = st.checkbox("🔄 Auto-Refresh", value=False)
+    if auto_refresh:
+        refresh_interval = st.slider("⏱️ Interval (sec)", 30, 300, 60)
 
 # ═══════════════════════════════════════════════════════════════
 # LOAD ML MODELS
 # ═══════════════════════════════════════════════════════════════
 @st.cache_resource
 def load_ml_models():
-    """Load pre-trained ML models."""
     try:
         classifier = joblib.load("render_best_classifier.pkl") if os.path.exists("render_best_classifier.pkl") else None
         ensemble = joblib.load("render_ensemble_classifier.pkl") if os.path.exists("render_ensemble_classifier.pkl") else None
@@ -208,20 +287,18 @@ def load_ml_models():
             "features": features
         }
     except Exception as e:
-        st.warning(f"⚠️ Could not load ML models: {e}")
         return None
 
 models = load_ml_models()
 
 # ═══════════════════════════════════════════════════════════════
-# DATA FETCHING & PROCESSING
+# DATA FETCHING
 # ═══════════════════════════════════════════════════════════════
 @st.cache_data(ttl=60)
-def fetch_data(symbol, period, interval):
-    """Download OHLCV data from Yahoo Finance."""
+def fetch_data(period, interval):
     try:
         df = yf.download(
-            symbol,
+            "RENDER-USD",
             period=period,
             interval=interval,
             progress=False
@@ -237,18 +314,11 @@ def fetch_data(symbol, period, interval):
         return None
 
 def add_indicators(df):
-    """Add all technical indicators to dataframe."""
-    if len(df) < 200:
-        st.warning("Not enough data for all indicators")
-        return df
-    
     try:
         # Trend
         df["EMA_9"] = ta.trend.ema_indicator(df["Close"], window=9)
         df["EMA_21"] = ta.trend.ema_indicator(df["Close"], window=21)
         df["EMA_50"] = ta.trend.ema_indicator(df["Close"], window=50)
-        df["EMA_200"] = ta.trend.ema_indicator(df["Close"], window=200)
-        df["SMA_20"] = ta.trend.sma_indicator(df["Close"], window=20)
         
         # MACD
         macd = ta.trend.MACD(df["Close"])
@@ -256,13 +326,8 @@ def add_indicators(df):
         df["MACD_Signal"] = macd.macd_signal()
         df["MACD_Hist"] = macd.macd_diff()
         
-        # ADX
-        df["ADX"] = ta.trend.adx(df["High"], df["Low"], df["Close"], window=14)
-        
         # RSI
         df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
-        df["RSI_Oversold"] = df["RSI"] < 30
-        df["RSI_Overbought"] = df["RSI"] > 70
         
         # Bollinger Bands
         bb = ta.volatility.BollingerBands(df["Close"], window=20, window_dev=2)
@@ -270,13 +335,14 @@ def add_indicators(df):
         df["BB_Lower"] = bb.bollinger_lband()
         df["BB_Middle"] = bb.bollinger_mavg()
         
-        # ATR & Volatility
+        # ATR
         df["ATR"] = ta.volatility.average_true_range(df["High"], df["Low"], df["Close"], window=14)
-        df["Volatility"] = df["Close"].pct_change().rolling(20).std() * 100
         
         # Volume
         df["Volume_SMA"] = ta.trend.sma_indicator(df["Volume"], window=20)
-        df["Volume_Ratio"] = df["Volume"] / df["Volume_SMA"]
+        
+        # ADX
+        df["ADX"] = ta.trend.adx(df["High"], df["Low"], df["Close"], window=14)
         
         # VWAP
         df["VWAP"] = ta.volume.volume_weighted_average_price(
@@ -286,16 +352,11 @@ def add_indicators(df):
         # OBV
         df["OBV"] = ta.volume.on_balance_volume(df["Close"], df["Volume"])
         
-        # Support/Resistance (50-period)
+        # Support/Resistance
         df["Support"] = df["Low"].rolling(50).min()
         df["Resistance"] = df["High"].rolling(50).max()
         
-        # Returns
-        df["Return_1H"] = df["Close"].pct_change(1)
-        df["Return_24H"] = df["Close"].pct_change(24)
-        
         return df.dropna()
-    
     except Exception as e:
         st.error(f"Error adding indicators: {e}")
         return df
@@ -304,26 +365,20 @@ def add_indicators(df):
 # ML PREDICTION
 # ═══════════════════════════════════════════════════════════════
 def get_ml_prediction(df):
-    """Generate ML predictions using trained models."""
     if models is None or models["classifier"] is None:
         return None
     
     try:
-        # Prepare features
         feature_cols = models["features"]
         X = df[feature_cols].values[-1:].astype(np.float64)
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         
-        # Scale
         X_scaled = models["scaler"].transform(X)
         
-        # Predict
         model = models["ensemble"] if use_ensemble else models["classifier"]
-        
         signal_proba = model.predict_proba(X_scaled)[0]
         signal = model.predict(X_scaled)[0]
         
-        # Regression
         price_pred = models["regressor"].predict(X_scaled)[0] if models["regressor"] else None
         
         return {
@@ -338,148 +393,199 @@ def get_ml_prediction(df):
             "price_prediction": float(price_pred) if price_pred else None,
         }
     except Exception as e:
-        st.warning(f"⚠️ ML prediction failed: {e}")
         return None
 
 # ═══════════════════════════════════════════════════════════════
 # TECHNICAL ANALYSIS SCORE
 # ═══════════════════════════════════════════════════════════════
 def calculate_trend_score(df):
-    """Calculate comprehensive trend score."""
     latest = df.iloc[-1]
     score = 0
     details = []
     
-    # EMA Alignment
+    # EMA
     if latest["EMA_9"] > latest["EMA_21"]:
-        score += 20
-        details.append("✓ EMA 9 > 21 (Bullish)")
+        score += 15
+        details.append("✓ EMA 9 > 21")
     else:
-        score -= 20
-        details.append("✗ EMA 9 < 21 (Bearish)")
+        score -= 15
+        details.append("✗ EMA 9 < 21")
     
     if latest["EMA_21"] > latest["EMA_50"]:
-        score += 20
-        details.append("✓ EMA 21 > 50 (Bullish)")
+        score += 15
+        details.append("✓ EMA 21 > 50")
     else:
-        score -= 20
-        details.append("✗ EMA 21 < 50 (Bearish)")
+        score -= 15
+        details.append("✗ EMA 21 < 50")
     
     # RSI
     if latest["RSI"] > 70:
-        score -= 15
-        details.append("⚠️ RSI Overbought (>70)")
-    elif latest["RSI"] > 60:
-        score += 15
-        details.append("✓ RSI Bullish (60-70)")
-    elif latest["RSI"] < 30:
-        score += 20
-        details.append("✓ RSI Oversold (<30) - Bounce Setup")
-    elif latest["RSI"] < 40:
         score -= 10
-        details.append("✗ RSI Weak (<40)")
+        details.append("⚠️ RSI >70 (Overbought)")
+    elif latest["RSI"] > 60:
+        score += 10
+        details.append("✓ RSI Bullish")
+    elif latest["RSI"] < 30:
+        score += 15
+        details.append("✓ RSI <30 (Oversold)")
     
     # MACD
     if latest["MACD"] > latest["MACD_Signal"]:
-        score += 20
+        score += 15
         details.append("✓ MACD Bullish")
     else:
-        score -= 20
+        score -= 15
         details.append("✗ MACD Bearish")
     
     # ADX
     if latest["ADX"] > 25:
-        score += 10
-        details.append("✓ Strong Trend (ADX > 25)")
-    
-    # ATR/Volatility
-    if latest["Volatility"] > 2:
-        details.append(f"⚠️ High Volatility ({latest['Volatility']:.2f}%)")
-    
-    # Volume
-    if latest["Volume"] > latest["Volume_SMA"]:
         score += 5
-        details.append("✓ High Volume")
-    
-    # Price Action
-    price_change = ((df["Close"].iloc[-1] - df["Close"].iloc[-10]) / df["Close"].iloc[-10]) * 100
-    if price_change > 0:
-        score += 10
-        details.append(f"✓ Uptrend (+{price_change:.2f}%)")
-    else:
-        score -= 10
-        details.append(f"✗ Downtrend ({price_change:.2f}%)")
+        details.append("✓ Strong Trend (ADX>25)")
     
     return score, details
 
 # ═══════════════════════════════════════════════════════════════
-# CANDLESTICK CHART
+# TRADINGVIEW-STYLE CANDLESTICK CHART
 # ═══════════════════════════════════════════════════════════════
-def create_candlestick_chart(df):
-    """Create TradingView-style candlestick chart."""
-    fig = go.Figure()
+def create_tradingview_chart(df):
+    """Create professional TradingView-style candlestick chart."""
+    
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.12,
+        row_heights=[0.7, 0.3],
+        specs=[[{"secondary_y": False}], [{"secondary_y": False}]]
+    )
     
     # Candlesticks
-    fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df["Open"],
-        high=df["High"],
-        low=df["Low"],
-        close=df["Close"],
-        name="OHLC",
-        increasing_line_color="#00ff88",
-        decreasing_line_color="#ff4d6d",
-    ))
+    fig.add_trace(
+        go.Candlestick(
+            x=df.index,
+            open=df["Open"],
+            high=df["High"],
+            low=df["Low"],
+            close=df["Close"],
+            name="OHLC",
+            increasing_line_color="#10b981",
+            decreasing_line_color="#ef4444",
+            increasing_fillcolor="#10b981",
+            decreasing_fillcolor="#ef4444",
+        ),
+        row=1, col=1
+    )
     
     # EMA Lines
     if len(df) > 50:
-        fig.add_trace(go.Scatter(
-            x=df.index, y=df["EMA_9"],
-            name="EMA 9", line=dict(color="cyan", width=1),
-            opacity=0.7
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index, y=df["EMA_21"],
-            name="EMA 21", line=dict(color="blue", width=1),
-            opacity=0.7
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index, y=df["EMA_50"],
-            name="EMA 50", line=dict(color="orange", width=1),
-            opacity=0.7
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=df.index, y=df["EMA_9"],
+                name="EMA 9", line=dict(color="#00d4ff", width=1),
+                opacity=0.8
+            ),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index, y=df["EMA_21"],
+                name="EMA 21", line=dict(color="#3b82f6", width=1),
+                opacity=0.8
+            ),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index, y=df["EMA_50"],
+                name="EMA 50", line=dict(color="#f59e0b", width=1),
+                opacity=0.8
+            ),
+            row=1, col=1
+        )
     
     # Bollinger Bands
     if len(df) > 20:
-        fig.add_trace(go.Scatter(
-            x=df.index, y=df["BB_Upper"],
-            name="BB Upper", line=dict(color="rgba(255, 170, 0, 0.3)", width=1),
-            showlegend=False
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index, y=df["BB_Lower"],
-            name="BB Lower", line=dict(color="rgba(255, 170, 0, 0.3)", width=1),
-            fill="tonexty",
-            fillcolor="rgba(255, 170, 0, 0.1)",
-            showlegend=False
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=df.index, y=df["BB_Upper"],
+                name="BB Upper",
+                line=dict(color="rgba(255, 170, 0, 0.2)", width=0),
+                showlegend=False
+            ),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index, y=df["BB_Lower"],
+                name="BB Lower",
+                line=dict(color="rgba(255, 170, 0, 0.2)", width=0),
+                fill="tonexty",
+                fillcolor="rgba(255, 170, 0, 0.1)",
+                showlegend=False
+            ),
+            row=1, col=1
+        )
     
     # Support/Resistance
-    fig.add_hline(y=df["Support"].iloc[-1], line_dash="dash", line_color="red", annotation_text="Support")
-    fig.add_hline(y=df["Resistance"].iloc[-1], line_dash="dash", line_color="green", annotation_text="Resistance")
+    if len(df) > 50:
+        fig.add_hline(
+            y=df["Support"].iloc[-1],
+            line_dash="dash",
+            line_color="rgba(16, 185, 129, 0.5)",
+            annotation_text="Support",
+            row=1, col=1
+        )
+        fig.add_hline(
+            y=df["Resistance"].iloc[-1],
+            line_dash="dash",
+            line_color="rgba(239, 68, 68, 0.5)",
+            annotation_text="Resistance",
+            row=1, col=1
+        )
     
+    # Volume
+    colors = ["#10b981" if df["Close"].iloc[i] > df["Open"].iloc[i] else "#ef4444"
+              for i in range(len(df))]
+    
+    fig.add_trace(
+        go.Bar(
+            x=df.index,
+            y=df["Volume"],
+            name="Volume",
+            marker=dict(color=colors),
+            opacity=0.3,
+        ),
+        row=2, col=1
+    )
+    
+    # Volume SMA
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["Volume_SMA"],
+            name="Vol SMA",
+            line=dict(color="#f59e0b", width=1),
+            opacity=0.7
+        ),
+        row=2, col=1
+    )
+    
+    # Layout
     fig.update_layout(
-        title=f"{symbol.split('-')[0]} Price Chart",
+        title="RENDER-USD Chart",
         yaxis_title="Price (USD)",
         xaxis_title="Time",
         template="plotly_dark",
-        height=500,
+        height=600,
         hovermode="x unified",
+        xaxis_rangeslider_visible=False,
         margin=dict(l=50, r=50, t=50, b=50),
-        plot_bgcolor="#050812",
-        paper_bgcolor="#050812",
-        font=dict(color="#e0e0e0"),
+        plot_bgcolor="#0f172a",
+        paper_bgcolor="#0f172a",
+        font=dict(color="#f3f4f6", family="Inter"),
     )
+    
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="#1f2937")
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor="#1f2937")
     
     return fig
 
@@ -487,31 +593,33 @@ def create_candlestick_chart(df):
 # RSI CHART
 # ═══════════════════════════════════════════════════════════════
 def create_rsi_chart(df):
-    """Create RSI indicator chart."""
     fig = go.Figure()
     
     fig.add_trace(go.Scatter(
         x=df.index, y=df["RSI"],
-        name="RSI (14)", line=dict(color="#00d4ff", width=2)
+        name="RSI (14)", line=dict(color="#00d4ff", width=2),
+        fill="tozeroy", fillcolor="rgba(0, 212, 255, 0.1)"
     ))
     
-    # Overbought/Oversold levels
-    fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (70)")
-    fig.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (30)")
-    fig.add_hline(y=50, line_dash="dot", line_color="gray", annotation_text="Neutral (50)")
+    fig.add_hline(y=70, line_dash="dash", line_color="#ef4444", annotation_text="Overbought (70)")
+    fig.add_hline(y=30, line_dash="dash", line_color="#10b981", annotation_text="Oversold (30)")
+    fig.add_hline(y=50, line_dash="dot", line_color="#6b7280", annotation_text="Neutral (50)")
     
     fig.update_layout(
         title="RSI (14)",
         yaxis_title="RSI",
         xaxis_title="Time",
         template="plotly_dark",
-        height=250,
+        height=300,
         hovermode="x unified",
         margin=dict(l=50, r=50, t=50, b=50),
-        plot_bgcolor="#050812",
-        paper_bgcolor="#050812",
-        font=dict(color="#e0e0e0"),
+        plot_bgcolor="#0f172a",
+        paper_bgcolor="#0f172a",
+        font=dict(color="#f3f4f6", family="Inter"),
     )
+    
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="#1f2937")
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor="#1f2937")
     
     return fig
 
@@ -519,7 +627,6 @@ def create_rsi_chart(df):
 # MACD CHART
 # ═══════════════════════════════════════════════════════════════
 def create_macd_chart(df):
-    """Create MACD indicator chart."""
     fig = go.Figure()
     
     fig.add_trace(go.Scatter(
@@ -529,11 +636,10 @@ def create_macd_chart(df):
     
     fig.add_trace(go.Scatter(
         x=df.index, y=df["MACD_Signal"],
-        name="Signal", line=dict(color="#ff4d6d", width=2)
+        name="Signal", line=dict(color="#ef4444", width=2)
     ))
     
-    # Histogram
-    colors = ["#00ff88" if x > 0 else "#ff4d6d" for x in df["MACD_Hist"]]
+    colors = ["#10b981" if x > 0 else "#ef4444" for x in df["MACD_Hist"]]
     fig.add_trace(go.Bar(
         x=df.index, y=df["MACD_Hist"],
         name="Histogram", marker=dict(color=colors), opacity=0.3
@@ -544,48 +650,16 @@ def create_macd_chart(df):
         yaxis_title="MACD",
         xaxis_title="Time",
         template="plotly_dark",
-        height=250,
+        height=300,
         hovermode="x unified",
         margin=dict(l=50, r=50, t=50, b=50),
-        plot_bgcolor="#050812",
-        paper_bgcolor="#050812",
-        font=dict(color="#e0e0e0"),
+        plot_bgcolor="#0f172a",
+        paper_bgcolor="#0f172a",
+        font=dict(color="#f3f4f6", family="Inter"),
     )
     
-    return fig
-
-# ═══════════════════════════════════════════════════════════════
-# VOLUME CHART
-# ═══════════════════════════════════════════════════════════════
-def create_volume_chart(df):
-    """Create volume chart with moving average."""
-    fig = go.Figure()
-    
-    colors = ["#00ff88" if df["Close"].iloc[i] > df["Open"].iloc[i] else "#ff4d6d" 
-              for i in range(len(df))]
-    
-    fig.add_trace(go.Bar(
-        x=df.index, y=df["Volume"],
-        name="Volume", marker=dict(color=colors), opacity=0.6
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["Volume_SMA"],
-        name="Volume SMA (20)", line=dict(color="#ffaa00", width=2)
-    ))
-    
-    fig.update_layout(
-        title="Volume",
-        yaxis_title="Volume",
-        xaxis_title="Time",
-        template="plotly_dark",
-        height=250,
-        hovermode="x unified",
-        margin=dict(l=50, r=50, t=50, b=50),
-        plot_bgcolor="#050812",
-        paper_bgcolor="#050812",
-        font=dict(color="#e0e0e0"),
-    )
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="#1f2937")
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor="#1f2937")
     
     return fig
 
@@ -594,57 +668,97 @@ def create_volume_chart(df):
 # ═══════════════════════════════════════════════════════════════
 
 # Header
-st.markdown("# 🚀 RENDER AI Trading Dashboard")
-st.markdown("*Real-time predictions powered by machine learning*")
+st.markdown("# 🚀 RENDER AI TRADING DASHBOARD")
+st.markdown("**Real-time predictions powered by machine learning**")
+st.divider()
 
 # Fetch data
-with st.spinner(f"⏳ Loading {symbol} data..."):
-    df = fetch_data(symbol, period, timeframe)
+with st.spinner("⏳ Loading data..."):
+    df = fetch_data(period, timeframe)
     
     if df is not None and len(df) > 0:
         df = add_indicators(df)
         latest = df.iloc[-1]
-        
-        # ═══════════════════════════════════════════════════════════════
-        # TOP METRICS ROW
-        # ═══════════════════════════════════════════════════════════════
-        col1, col2, col3, col4, col5, col6 = st.columns(6)
         
         current_price = float(latest["Close"])
         prev_price = float(df["Close"].iloc[-2]) if len(df) > 1 else current_price
         price_change = current_price - prev_price
         price_change_pct = (price_change / prev_price) * 100 if prev_price != 0 else 0
         
+        # ═══════════════════════════════════════════════════════════════
+        # TOP METRICS SECTION
+        # ═══════════════════════════════════════════════════════════════
+        st.markdown('<div class="section-header">📊 MARKET METRICS</div>', unsafe_allow_html=True)
+        
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
+        
         with col1:
-            st.metric("Price", f"${current_price:.4f}", f"{price_change:+.4f} ({price_change_pct:+.2f}%)")
+            st.markdown(f"""
+            <div class="metric-box">
+                <div class="metric-box-title">Price</div>
+                <div class="metric-box-value">${current_price:.4f}</div>
+                <div class="metric-box-change">{price_change:+.4f} ({price_change_pct:+.2f}%)</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         with col2:
-            st.metric("24H Change", f"{((df['Close'].iloc[-1] - df['Close'].iloc[-24]) / df['Close'].iloc[-24] * 100):+.2f}%")
+            change_24h = ((df["Close"].iloc[-1] - df["Close"].iloc[-24]) / df["Close"].iloc[-24] * 100) if len(df) > 24 else 0
+            st.markdown(f"""
+            <div class="metric-box">
+                <div class="metric-box-title">24H Change</div>
+                <div class="metric-box-value">{change_24h:+.2f}%</div>
+                <div class="metric-box-change">Last 24 hours</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         with col3:
-            st.metric("RSI (14)", f"{latest['RSI']:.2f}")
+            st.markdown(f"""
+            <div class="metric-box">
+                <div class="metric-box-title">RSI (14)</div>
+                <div class="metric-box-value">{latest['RSI']:.1f}</div>
+                <div class="metric-box-change">{'Overbought' if latest['RSI'] > 70 else 'Oversold' if latest['RSI'] < 30 else 'Neutral'}</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         with col4:
-            st.metric("ATR", f"${latest['ATR']:.4f}")
+            st.markdown(f"""
+            <div class="metric-box">
+                <div class="metric-box-title">ATR</div>
+                <div class="metric-box-value">${latest['ATR']:.4f}</div>
+                <div class="metric-box-change">Volatility</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         with col5:
-            st.metric("Volatility", f"{latest['Volatility']:.2f}%")
+            vol = ((latest["High"] - latest["Low"]) / latest["Close"] * 100)
+            st.markdown(f"""
+            <div class="metric-box">
+                <div class="metric-box-title">Volatility</div>
+                <div class="metric-box-value">{vol:.2f}%</div>
+                <div class="metric-box-change">Intraday</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         with col6:
-            st.metric("Volume", f"{latest['Volume']/1e6:.2f}M")
+            st.markdown(f"""
+            <div class="metric-box">
+                <div class="metric-box-title">Volume</div>
+                <div class="metric-box-value">{latest['Volume']/1e6:.2f}M</div>
+                <div class="metric-box-change">24H Volume</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         st.divider()
         
         # ═══════════════════════════════════════════════════════════════
-        # ML PREDICTIONS & SIGNALS
+        # SIGNALS SECTION
         # ═══════════════════════════════════════════════════════════════
-        ml_pred = get_ml_prediction(df)
-        trend_score, trend_details = calculate_trend_score(df)
+        st.markdown('<div class="section-header">🎯 SIGNALS & PREDICTIONS</div>', unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("🤖 ML Prediction")
+            ml_pred = get_ml_prediction(df)
             
             if ml_pred and ml_pred["confidence"] >= confidence_threshold:
                 signal = ml_pred["signal"]
@@ -653,130 +767,120 @@ with st.spinner(f"⏳ Loading {symbol} data..."):
                 if signal == "BUY":
                     st.markdown(f"""
                     <div class="signal-buy">
-                        🟢 BUY<br>
-                        Confidence: {confidence:.1f}%
+                        <div style="font-size: 32px;">🟢</div>
+                        <div class="signal-text">BUY</div>
+                        <div class="confidence-text">Confidence: {confidence:.1f}%</div>
                     </div>
                     """, unsafe_allow_html=True)
                 elif signal == "SELL":
                     st.markdown(f"""
                     <div class="signal-sell">
-                        🔴 SELL<br>
-                        Confidence: {confidence:.1f}%
+                        <div style="font-size: 32px;">🔴</div>
+                        <div class="signal-text">SELL</div>
+                        <div class="confidence-text">Confidence: {confidence:.1f}%</div>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.markdown(f"""
                     <div class="signal-hold">
-                        🟡 HOLD<br>
-                        Confidence: {confidence:.1f}%
+                        <div style="font-size: 32px;">🟡</div>
+                        <div class="signal-text">HOLD</div>
+                        <div class="confidence-text">Confidence: {confidence:.1f}%</div>
                     </div>
                     """, unsafe_allow_html=True)
                 
                 # Probability breakdown
-                st.markdown("#### Probabilities")
-                col_s, col_h, col_b = st.columns(3)
-                with col_s:
-                    st.metric("SELL", f"{ml_pred['probabilities']['sell']:.1f}%")
-                with col_h:
-                    st.metric("HOLD", f"{ml_pred['probabilities']['hold']:.1f}%")
-                with col_b:
-                    st.metric("BUY", f"{ml_pred['probabilities']['buy']:.1f}%")
+                st.markdown("**Probability Breakdown:**")
+                cols = st.columns(3)
+                with cols[0]:
+                    st.metric("SELL", f"{ml_pred['probabilities']['sell']:.1f}%", delta=None)
+                with cols[1]:
+                    st.metric("HOLD", f"{ml_pred['probabilities']['hold']:.1f}%", delta=None)
+                with cols[2]:
+                    st.metric("BUY", f"{ml_pred['probabilities']['buy']:.1f}%", delta=None)
                 
                 # Price prediction
                 if ml_pred["price_prediction"]:
                     pred_price = ml_pred["price_prediction"]
                     pred_change = ((pred_price - current_price) / current_price) * 100
+                    
                     st.markdown(f"""
-                    <div class="info-box">
-                        <b>Predicted Price (24h):</b> ${pred_price:.4f}<br>
-                        <b>Expected Change:</b> {pred_change:+.2f}%
+                    <div class="info-section">
+                        <div class="info-section-title">📈 Price Prediction (24H)</div>
+                        <div class="info-row">
+                            <span class="info-label">Predicted Price:</span>
+                            <span class="info-value">${pred_price:.4f}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Expected Change:</span>
+                            <span class="info-value">{pred_change:+.2f}%</span>
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
             else:
                 st.warning("⚠️ Confidence below threshold. No signal.")
         
         with col2:
-            st.subheader("📊 Technical Score")
+            trend_score, trend_details = calculate_trend_score(df)
             
-            # Score gauge
-            score_color = "#00ff88" if trend_score > 40 else "#ff4d6d" if trend_score < -40 else "#ffaa00"
+            score_color = "#10b981" if trend_score > 30 else "#ef4444" if trend_score < -30 else "#f59e0b"
+            
             st.markdown(f"""
             <div style="
-                background: linear-gradient(135deg, #1a1f3a 0%, #16213e 100%);
-                border: 3px solid {score_color};
-                border-radius: 12px;
-                padding: 30px;
+                background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+                border: 2px solid {score_color};
+                border-radius: 8px;
+                padding: 20px;
                 text-align: center;
             ">
-                <h2 style="color: {score_color}; margin: 0;">{trend_score:+d}</h2>
-                <p style="margin: 10px 0 0 0;">Technical Score</p>
+                <div style="font-size: 40px; color: {score_color}; font-weight: 700; margin: 10px 0;">{trend_score:+d}</div>
+                <div style="color: #d1d5db; font-size: 13px; text-transform: uppercase; font-weight: 600;">Technical Score</div>
             </div>
             """, unsafe_allow_html=True)
             
-            st.markdown("#### Signal Breakdown")
-            for detail in trend_details:
+            st.markdown("**Signal Details:**")
+            for detail in trend_details[:6]:
                 st.text(detail)
         
         st.divider()
         
         # ═══════════════════════════════════════════════════════════════
-        # CHARTS
+        # CHARTS SECTION
         # ═══════════════════════════════════════════════════════════════
-        st.subheader("📈 Charts")
+        st.markdown('<div class="section-header">📈 CHARTS & INDICATORS</div>', unsafe_allow_html=True)
         
-        chart_tabs = st.tabs(["Price", "RSI", "MACD", "Volume", "Analysis"])
+        chart_tabs = st.tabs(["PRICE", "RSI", "MACD", "DETAILS"])
         
         with chart_tabs[0]:
-            st.plotly_chart(create_candlestick_chart(df), use_container_width=True)
+            st.plotly_chart(create_tradingview_chart(df), use_container_width=True, config={"displayModeBar": True})
         
         with chart_tabs[1]:
-            st.plotly_chart(create_rsi_chart(df), use_container_width=True)
+            st.plotly_chart(create_rsi_chart(df), use_container_width=True, config={"displayModeBar": True})
         
         with chart_tabs[2]:
-            st.plotly_chart(create_macd_chart(df), use_container_width=True)
+            st.plotly_chart(create_macd_chart(df), use_container_width=True, config={"displayModeBar": True})
         
         with chart_tabs[3]:
-            st.plotly_chart(create_volume_chart(df), use_container_width=True)
-        
-        with chart_tabs[4]:
-            st.markdown("### Market Analysis")
-            
-            # Market regime
-            if latest["EMA_9"] > latest["EMA_50"] and latest["RSI"] > 55:
-                regime = "🟢 BULLISH"
-            elif latest["EMA_9"] < latest["EMA_50"] and latest["RSI"] < 45:
-                regime = "🔴 BEARISH"
-            else:
-                regime = "🟡 SIDEWAYS"
-            
-            st.metric("Market Regime", regime)
-            
-            # Support/Resistance
             col1, col2 = st.columns(2)
+            
             with col1:
-                st.markdown(f"""
-                <div class="info-box">
-                    <b>Support:</b> ${latest['Support']:.4f}<br>
-                    <b>Resistance:</b> ${latest['Resistance']:.4f}
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown("**EMA Analysis**")
+                st.metric("EMA 9", f"${latest['EMA_9']:.4f}")
+                st.metric("EMA 21", f"${latest['EMA_21']:.4f}")
+                st.metric("EMA 50", f"${latest['EMA_50']:.4f}")
             
             with col2:
-                st.markdown(f"""
-                <div class="info-box">
-                    <b>VWAP:</b> ${latest['VWAP']:.4f}<br>
-                    <b>Current:</b> ${current_price:.4f}
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown("**Support/Resistance**")
+                st.metric("Support", f"${latest['Support']:.4f}")
+                st.metric("Resistance", f"${latest['Resistance']:.4f}")
+                st.metric("VWAP", f"${latest['VWAP']:.4f}")
         
         st.divider()
         
         # ═══════════════════════════════════════════════════════════════
-        # TRADING SETUP
+        # TRADING SETUP SECTION
         # ═══════════════════════════════════════════════════════════════
-        st.subheader("🎯 Trading Setup")
-        
-        col1, col2, col3 = st.columns(3)
+        st.markdown('<div class="section-header">🎯 TRADING SETUP</div>', unsafe_allow_html=True)
         
         entry_price = current_price
         stop_loss = current_price - (latest["ATR"] * 2)
@@ -784,91 +888,62 @@ with st.spinner(f"⏳ Loading {symbol} data..."):
         take_profit_2 = current_price + (latest["ATR"] * 6)
         risk_reward = ((take_profit_1 - entry_price) / (entry_price - stop_loss)) if entry_price > stop_loss else 0
         
+        col1, col2, col3 = st.columns(3)
+        
         with col1:
             st.markdown(f"""
-            <div class="info-box">
-                <b>Entry:</b> ${entry_price:.4f}<br>
-                <b>Stop Loss:</b> ${stop_loss:.4f}<br>
-                <b>Risk: ${entry_price - stop_loss:.4f}</b>
+            <div class="info-section">
+                <div class="info-section-title">📍 ENTRY & STOP</div>
+                <div class="info-row">
+                    <span class="info-label">Entry Price:</span>
+                    <span class="info-value">${entry_price:.4f}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Stop Loss:</span>
+                    <span class="info-value">${stop_loss:.4f}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Risk:</span>
+                    <span class="info-value">${entry_price - stop_loss:.4f}</span>
+                </div>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
             st.markdown(f"""
-            <div class="info-box">
-                <b>Take Profit 1:</b> ${take_profit_1:.4f}<br>
-                <b>Take Profit 2:</b> ${take_profit_2:.4f}<br>
-                <b>Risk/Reward: {risk_reward:.2f}</b>
+            <div class="info-section">
+                <div class="info-section-title">🎯 TAKE PROFITS</div>
+                <div class="info-row">
+                    <span class="info-label">TP1 (3×ATR):</span>
+                    <span class="info-value">${take_profit_1:.4f}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">TP2 (6×ATR):</span>
+                    <span class="info-value">${take_profit_2:.4f}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">R/R Ratio:</span>
+                    <span class="info-value">{risk_reward:.2f}x</span>
+                </div>
             </div>
             """, unsafe_allow_html=True)
         
         with col3:
-            st.markdown(f"""
-            <div class="info-box">
-                <b>Position Size (1% risk):</b><br>
-                Account Size: <input type="number" value="1000" min="0" style="width: 80px; padding: 5px;"><br>
-                <b style="color: #00ff88;">Adjust entry/SL above</b>
+            st.markdown("""
+            <div class="info-section">
+                <div class="info-section-title">💰 POSITION SIZING</div>
+                <div class="info-row">
+                    <span class="info-label">Account Size:</span>
+                    <input type="number" value="10000" style="width: 100px; padding: 5px; background: #111827; color: #f3f4f6; border: 1px solid #374151; border-radius: 4px;">
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Risk %:</span>
+                    <input type="number" value="1" min="0.1" max="5" style="width: 100px; padding: 5px; background: #111827; color: #f3f4f6; border: 1px solid #374151; border-radius: 4px;">
+                </div>
             </div>
             """, unsafe_allow_html=True)
         
         st.divider()
-        
-        # ═══════════════════════════════════════════════════════════════
-        # ADVANCED METRICS
-        # ═══════════════════════════════════════════════════════════════
-        st.subheader("🔍 Advanced Metrics")
-        
-        metrics_tabs = st.tabs(["Indicators", "Ratios", "Momentum", "Divergences"])
-        
-        with metrics_tabs[0]:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("MACD", f"{latest['MACD']:.6f}", delta=f"{latest['MACD_Hist']:.6f}")
-            with col2:
-                st.metric("ADX", f"{latest['ADX']:.2f}")
-            with col3:
-                st.metric("OBV", f"{latest['OBV']:,.0f}")
-            with col4:
-                st.metric("Volume Ratio", f"{latest['Volume_Ratio']:.2f}x")
-        
-        with metrics_tabs[1]:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Price vs EMA 50", f"{((current_price - latest['EMA_50']) / latest['EMA_50'] * 100):+.2f}%")
-            with col2:
-                st.metric("Price vs VWAP", f"{((current_price - latest['VWAP']) / latest['VWAP'] * 100):+.2f}%")
-            with col3:
-                st.metric("BB Position", f"{((current_price - latest['BB_Lower']) / (latest['BB_Upper'] - latest['BB_Lower']) * 100):.1f}%")
-            with col4:
-                st.metric("ATR %", f"{(latest['ATR'] / current_price * 100):.2f}%")
-        
-        with metrics_tabs[2]:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("1H Return", f"{latest['Return_1H']*100:+.3f}%")
-            with col2:
-                st.metric("24H Return", f"{latest['Return_24H']*100:+.2f}%")
-            with col3:
-                st.metric("EMA 9-21 Diff", f"${abs(latest['EMA_9'] - latest['EMA_21']):.4f}")
-            with col4:
-                st.metric("EMA 21-50 Diff", f"${abs(latest['EMA_21'] - latest['EMA_50']):.4f}")
-        
-        with metrics_tabs[3]:
-            st.info("📊 Divergence Analysis")
-            st.write("Monitor for bullish/bearish divergences between price and RSI/MACD")
-            
-            # RSI Divergence
-            recent_rsi = df["RSI"].iloc[-20:].values
-            recent_close = df["Close"].iloc[-20:].values
-            
-            if len(recent_rsi) > 0 and len(recent_close) > 0:
-                rsi_lower = np.any(recent_rsi < 30)
-                close_lower = recent_close[-1] < recent_close[0]
-                
-                if close_lower and not rsi_lower:
-                    st.success("✅ Bullish Divergence detected (Price ↓, RSI ↑)")
-                elif not close_lower and rsi_lower:
-                    st.error("❌ Bearish Divergence detected (Price ↑, RSI ↓)")
         
         # ═══════════════════════════════════════════════════════════════
         # AUTO-REFRESH
@@ -881,18 +956,10 @@ with st.spinner(f"⏳ Loading {symbol} data..."):
     else:
         st.error("❌ Failed to fetch data. Please try again.")
 
-# ═══════════════════════════════════════════════════════════════
-# FOOTER
-# ═══════════════════════════════════════════════════════════════
+# Footer
 st.divider()
 st.markdown("""
----
-**⚠️ Disclaimer:** This dashboard is for educational purposes only. 
-Not financial advice. Always do your own research and manage risk properly.
-
-**💡 Tips:**
-- Combine multiple signals for better accuracy
-- Use stop losses to manage risk
-- Don't trade on emotions
-- Test strategies in paper trading first
-""")
+<div style="text-align: center; color: #6b7280; font-size: 12px; padding: 20px;">
+⚠️ <b>Disclaimer:</b> For educational purposes only. Not financial advice. Trade at your own risk.
+</div>
+""", unsafe_allow_html=True)
