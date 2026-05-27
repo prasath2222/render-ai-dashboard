@@ -3,6 +3,325 @@ import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import yfinance as yf
+from xgboost import XGBClassifier, XGBRegressor
+from sklearn.model_selection import train_test_split
+from datetime import datetime
+
+# ==========================================
+# 1. PAGE CONFIGURATION & EDGE-TO-EDGE CSS
+# ==========================================
+st.set_page_config(
+    page_title="RENDER Pro Terminal", 
+    page_icon="⚡", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
+
+# Deep CSS override for premium institutional UI
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    /* Global resets for edge-to-edge layout */
+    html, body, [class*="css"], [class*="st-"], .stApp {
+        background-color: #0b0e11 !important; /* Binance Dark */
+        color: #eaecef !important;
+        font-family: 'Inter', sans-serif !important;
+    }
+    
+    /* Remove all Streamlit padding and headers */
+    .block-container { padding: 0rem 1rem 1rem 1rem !important; max-width: 100% !important; }
+    header { visibility: hidden; }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+
+    /* Premium Metric Cards */
+    .metric-card {
+        background-color: #181a20;
+        border: 1px solid #2b3139;
+        border-radius: 8px;
+        padding: 16px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+    }
+    
+    /* Top Ticker Bar */
+    .ticker-bar {
+        background-color: #181a20;
+        border-bottom: 1px solid #2b3139;
+        padding: 12px 24px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-left: -1rem;
+        margin-right: -1rem;
+    }
+    
+    /* Typography overrides */
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .text-bull { color: #0ecb81 !important; } /* Crypto Green */
+    .text-bear { color: #f6465d !important; } /* Crypto Red */
+    .text-muted { color: #848e9c !important; }
+    
+    .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #848e9c; margin-bottom: 4px; }
+    .val-large { font-size: 28px; font-weight: 700; }
+    .val-med { font-size: 20px; font-weight: 600; }
+    .val-small { font-size: 14px; font-weight: 500; }
+    
+    hr { border-color: #2b3139; margin: 15px 0; }
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 2. DATA ORCHESTRATION (USD & INR)
+# ==========================================
+@st.cache_data(ttl=60)
+def fetch_market_data():
+    try:
+        # Fetch RENDER data
+        df = yf.download("RENDER-USD", period="60d", interval="1h", progress=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = df.dropna()
+        
+        # Fetch live INR rate
+        inr_data = yf.download("USDINR=X", period="1d", progress=False)
+        inr_rate = float(inr_data['Close'].iloc[-1]) if not inr_data.empty else 83.50
+        
+        return df, inr_rate
+    except Exception as e:
+        return pd.DataFrame(), 83.50
+
+@st.cache_resource
+def run_quant_models(df):
+    """XGBoost models for directional classification and price regression."""
+    df = df.copy()
+    
+    # Feature Engineering
+    df['SMA_20'] = df['Close'].rolling(20).mean()
+    df['SMA_50'] = df['Close'].rolling(50).mean()
+    df['Vol_Mean'] = df['Volume'].rolling(20).mean()
+    df['Price_Mom'] = df['Close'].pct_change(4)
+    
+    df['Target_Reg'] = df['Close'].shift(-1)
+    df['Target_Cls'] = np.where(df['Target_Reg'] > df['Close'], 1, 0)
+    df = df.dropna()
+    
+    features = ['Close', 'High', 'Low', 'Volume', 'SMA_20', 'SMA_50', 'Vol_Mean', 'Price_Mom']
+    X = df[features]
+    
+    # Classification Model (Direction)
+    y_cls = df['Target_Cls']
+    X_train_c, X_test_c, y_train_c, y_test_c = train_test_split(X, y_cls, test_size=0.1, shuffle=False)
+    cls_model = XGBClassifier(n_estimators=100, max_depth=3, learning_rate=0.05, random_state=42)
+    cls_model.fit(X_train_c, y_train_c)
+    cls_probs = cls_model.predict_proba(X.iloc[[-1]])[0]
+    
+    # Regression Model (Price Target)
+    y_reg = df['Target_Reg']
+    X_train_r, X_test_r, y_train_r, y_test_r = train_test_split(X, y_reg, test_size=0.1, shuffle=False)
+    reg_model = XGBRegressor(n_estimators=100, max_depth=3, learning_rate=0.05, random_state=42)
+    reg_model.fit(X_train_r, y_train_r)
+    next_price = reg_model.predict(X.iloc[[-1]])[0]
+    
+    return cls_probs, next_price
+
+# Helper to format dual currency
+def fmt_price(usd, inr_rate, dec=4):
+    inr = usd * inr_rate
+    return f"${usd:,.{dec}f} <span class='text-muted val-small mono'>(₹{inr:,.2f})</span>"
+
+# ==========================================
+# 3. INITIALIZATION & HEADER
+# ==========================================
+df, inr_rate = fetch_market_data()
+
+if df.empty:
+    st.error("Market data feed unavailable. Retrying connection...")
+    st.stop()
+
+current_price = float(df['Close'].iloc[-1])
+prev_price = float(df['Close'].iloc[-24]) # 24h ago approximation (using 1h candles)
+pct_24h = ((current_price - prev_price) / prev_price) * 100
+
+high_24h = float(df['High'].tail(24).max())
+low_24h = float(df['Low'].tail(24).min())
+vol_24h = float(df['Volume'].tail(24).sum())
+
+color_class = "text-bull" if pct_24h >= 0 else "text-bear"
+sign = "+" if pct_24h >= 0 else ""
+
+# Ticker Bar HTML
+st.markdown(f"""
+<div class="ticker-bar">
+    <div style="display: flex; align-items: center; gap: 20px;">
+        <div>
+            <h2 style="margin: 0; font-size: 22px; font-weight: 700;">RENDER/USDT</h2>
+            <div class="label" style="color: #0ecb81;">● Real-Time Feed</div>
+        </div>
+        <div>
+            <div class="val-large mono {color_class}">${current_price:,.4f}</div>
+            <div class="mono text-muted">₹{(current_price * inr_rate):,.2f} INR</div>
+        </div>
+    </div>
+    <div style="display: flex; gap: 40px; text-align: right;">
+        <div>
+            <div class="label">24h Change</div>
+            <div class="val-small mono {color_class}">{sign}{pct_24h:.2f}%</div>
+        </div>
+        <div>
+            <div class="label">24h High</div>
+            <div class="val-small mono">${high_24h:,.4f}</div>
+        </div>
+        <div>
+            <div class="label">24h Low</div>
+            <div class="val-small mono">${low_24h:,.4f}</div>
+        </div>
+        <div>
+            <div class="label">24h Volume (RNDR)</div>
+            <div class="val-small mono">{vol_24h:,.0f}</div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 4. MAIN LAYOUT: CHART + AI DASHBOARD
+# ==========================================
+# Embed TradingView Advanced Chart Engine
+# This handles responsive sizing, smooth zooming, and split-pane indicators natively.
+tv_widget = """
+<div class="tradingview-widget-container" style="height: 600px; width: 100%; margin-bottom: 20px;">
+  <div id="tradingview_rndr" style="height: 100%; width: 100%;"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  <script type="text/javascript">
+  new TradingView.widget({
+      "autosize": true,
+      "symbol": "BINANCE:RENDERUSDT",
+      "interval": "60",
+      "timezone": "Etc/UTC",
+      "theme": "dark",
+      "style": "1",
+      "locale": "en",
+      "enable_publishing": false,
+      "backgroundColor": "#0b0e11",
+      "gridColor": "#1f2937",
+      "hide_top_toolbar": false,
+      "hide_legend": false,
+      "save_image": false,
+      "container_id": "tradingview_rndr",
+      "toolbar_bg": "#0b0e11",
+      "studies": [
+        "Volume@tv-basicstudies",
+        "MACD@tv-basicstudies",
+        "RSI@tv-basicstudies"
+      ]
+  });
+  </script>
+</div>
+"""
+components.html(tv_widget, height=600)
+
+# ==========================================
+# 5. AI ENGINE & QUANT METRICS
+# ==========================================
+cls_probs, next_price = run_quant_models(df)
+prob_bear, prob_bull = cls_probs[0], cls_probs[1]
+
+# Signal Logic
+if prob_bull > 0.65: ai_signal, sig_color = "STRONG BUY", "text-bull"
+elif prob_bull > 0.52: ai_signal, sig_color = "BUY", "text-bull"
+elif prob_bear > 0.65: ai_signal, sig_color = "STRONG SELL", "text-bear"
+elif prob_bear > 0.52: ai_signal, sig_color = "SELL", "text-bear"
+else: ai_signal, sig_color = "NEUTRAL", "text-muted"
+
+# Support / Resistance via Pivot Points
+pivot = (high_24h + low_24h + current_price) / 3
+r1 = (2 * pivot) - low_24h
+s1 = (2 * pivot) - high_24h
+
+# Dashboard Grid
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="label">AI Directional Classification (1H)</div>
+        <div class="val-large {sig_color}" style="margin-top: 5px;">{ai_signal}</div>
+        <hr>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+            <span class="label">Bull Probability</span>
+            <span class="mono val-small text-bull">{prob_bull*100:.1f}%</span>
+        </div>
+        <div style="width:100%; background-color:#2b3139; border-radius:4px; height:6px; overflow:hidden;">
+            <div style="width:{prob_bull*100}%; background-color:#0ecb81; height:100%;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 15px; margin-bottom: 5px;">
+            <span class="label">Bear Probability</span>
+            <span class="mono val-small text-bear">{prob_bear*100:.1f}%</span>
+        </div>
+        <div style="width:100%; background-color:#2b3139; border-radius:4px; height:6px; overflow:hidden;">
+            <div style="width:{prob_bear*100}%; background-color:#f6465d; height:100%;"></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    proj_move = ((next_price - current_price) / current_price) * 100
+    move_color = "text-bull" if proj_move >= 0 else "text-bear"
+    move_sign = "+" if proj_move >= 0 else ""
+    
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="label">AI Target Regression (Next Candle)</div>
+        <div class="val-med mono" style="margin-top: 5px;">{fmt_price(next_price, inr_rate)}</div>
+        <hr>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <span class="label">Projected Move</span>
+            <span class="mono val-small {move_color}">{move_sign}{proj_move:.2f}%</span>
+        </div>
+        <div class="label">Order Execution Context</div>
+        <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+            <span class="text-muted mono val-small">Target TP</span>
+            <span class="mono val-small text-bull">{fmt_price(current_price * 1.03, inr_rate)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+            <span class="text-muted mono val-small">Dynamic SL</span>
+            <span class="mono val-small text-bear">{fmt_price(current_price * 0.98, inr_rate)}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col3:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="label">Market Structure & Liquidity Zones</div>
+        <div style="margin-top: 15px;">
+            <div class="label" style="color: #f6465d;">Resistance 1 (R1)</div>
+            <div class="val-med mono">{fmt_price(r1, inr_rate)}</div>
+        </div>
+        <hr>
+        <div>
+            <div class="label" style="color: #0ecb81;">Support 1 (S1)</div>
+            <div class="val-med mono">{fmt_price(s1, inr_rate)}</div>
+        </div>
+        <hr>
+        <div style="display: flex; justify-content: space-between;">
+            <div>
+                <div class="label">VWAP Proxy</div>
+                <div class="val-small mono text-muted">{fmt_price(pivot, inr_rate)}</div>
+            </div>
+            <div style="text-align: right;">
+                <div class="label">Model Base</div>
+                <div class="val-small text-muted mono">XGBoost DMatrix</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)import streamlit as st
+import streamlit.components.v1 as components
+import pandas as pd
+import numpy as np
+import yfinance as yf
 import time
 from xgboost import XGBClassifier, XGBRegressor
 from sklearn.metrics import accuracy_score, r2_score
