@@ -1,53 +1,24 @@
-import requests
 
-# =========================================================
-# TELEGRAM CONFIG
-# =========================================================
-
-BOT_TOKEN = "8072713136:AAEE-xY6cZ-b6T5_HwZ2CESBqNB5AkNWtHE"
-
-CHAT_ID = "6941184785"
-
-# =========================================================
-# SEND ALERT
-# =========================================================
-
-def send_alert(
-
-    coin,
-    signal,
-    confidence,
-    price
-
-):
-
-    message = f"""
-🚀 AI CRYPTO ALERT
-
-Coin: {coin}
-
-Signal: {signal}
-
-Confidence: {confidence:.2f}%
-
-Price: ${price:.2f}
+"""
+Telegram alert sender.
+Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID as environment variables
+or Streamlit secrets (secrets.toml).
 """
 
-    url = (
-        f"https://api.telegram.org/bot"
-        f"{BOT_TOKEN}/sendMessage"
-    )
+import os
+import requests
 
-    payload = {
-
-        "chat_id": CHAT_ID,
-
-        "text": message
-    }
-
-    response = requests.post(
-        url,
-        data=payload
-    )
-
-    print(response.text)
+def send_alert(message: str) -> bool:
+    token   = os.getenv("8072713136:AAEE-xY6cZ-b6T5_HwZ2CESBqNB5AkNWtHE", "")
+    chat_id = os.getenv("6941184785",   "")
+    if not token or not chat_id:
+        print("[Telegram] BOT_TOKEN or CHAT_ID not set — skipping alert.")
+        return False
+    try:
+        url  = f"https://api.telegram.org/bot{token}/sendMessage"
+        resp = requests.post(url, json={"chat_id": chat_id, "text": message,
+                                        "parse_mode": "HTML"}, timeout=10)
+        return resp.status_code == 200
+    except Exception as e:
+        print(f"[Telegram] Error: {e}")
+        return False
