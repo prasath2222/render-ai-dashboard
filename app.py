@@ -1,22 +1,3 @@
-"""
-╔══════════════════════════════════════════════════════════════════╗
-║   RENDER (RNDR) — AI PREDICTION DASHBOARD                       ║
-║   Streamlit app  ·  deploy on Streamlit Cloud / GitHub          ║
-╚══════════════════════════════════════════════════════════════════╝
-
-Run locally:
-    pip install -r requirements.txt
-    streamlit run app.py
-
-Required files in same directory:
-    render_ensemble_cls.pkl
-    render_reg.pkl
-    render_scaler.pkl
-    render_features.pkl
-    render_meta.json
-    (train.py  →  generates the above)
-"""
-
 import os, json, warnings
 warnings.filterwarnings("ignore")
 
@@ -28,282 +9,171 @@ import joblib
 import ta
 import streamlit as st
 import plotly.graph_objects as go
-import plotly.express as px
 from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# ══════════════════════════════════════════════════════════════════
-# PAGE CONFIG  (must be first Streamlit call)
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════
+# PAGE CONFIG
+# ═══════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="RNDR AI · Render Network Prediction",
+    page_title="RENDER AI · RNDR Prediction Terminal",
     page_icon="🔮",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
-# ══════════════════════════════════════════════════════════════════
-# GLOBAL CSS — dark trading terminal aesthetic
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════
+# GLOBAL CSS
+# ═══════════════════════════════════════════════════════
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body, [class*="css"] {
-    font-family: 'Space Grotesk', sans-serif;
-    background: #060a10 !important;
-    color: #e2e8f0 !important;
+    font-family: 'Inter', -apple-system, sans-serif !important;
+    background: #07090f !important;
+    color: #c9d1d9 !important;
 }
-.stApp { background: #060a10 !important; }
+.stApp { background: #07090f !important; }
+.block-container {
+    padding: 0 20px 40px 20px !important;
+    max-width: 1600px !important;
+}
+section[data-testid="stSidebar"] {
+    background: #0d1117 !important;
+    border-right: 1px solid #1c2333 !important;
+}
+section[data-testid="stSidebar"] * { color: #c9d1d9 !important; }
+.stSelectbox > div > div { background: #161b22 !important; border-color: #30363d !important; }
+.stCheckbox span { color: #c9d1d9 !important; }
 
-/* Remove default Streamlit padding */
-.block-container { padding: 0 1.5rem 2rem 1.5rem !important; max-width: 1600px !important; }
-.main > div { padding-top: 0 !important; }
+/* scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #07090f; }
+::-webkit-scrollbar-thumb { background: #21262d; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #30363d; }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #0d1520; }
-::-webkit-scrollbar-thumb { background: #1e3050; border-radius: 3px; }
+/* hide streamlit chrome */
+#MainMenu, footer, header { visibility: hidden; }
+div[data-testid="stDecoration"] { display: none; }
 
-/* ─── TOP HEADER BAR ─── */
-.top-header {
-    background: linear-gradient(135deg, #0a1628 0%, #0d1f3c 50%, #0a1628 100%);
-    border-bottom: 1px solid #1a2d4a;
-    padding: 14px 28px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: 0 -1.5rem 24px -1.5rem;
-    flex-wrap: wrap;
-    gap: 12px;
-}
-.header-left { display: flex; align-items: center; gap: 16px; }
-.header-logo {
-    width: 44px; height: 44px;
-    background: linear-gradient(135deg, #f97316, #ea580c);
-    border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 22px; font-weight: 800;
-    box-shadow: 0 0 20px rgba(249,115,22,0.3);
-}
-.header-title { font-size: 20px; font-weight: 700; color: #f1f5f9; letter-spacing: -0.3px; }
-.header-sub { font-size: 12px; color: #64748b; letter-spacing: 0.06em; }
-.live-chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3);
-    color: #22c55e; font-size: 11px; font-weight: 600;
-    padding: 4px 12px; border-radius: 20px; letter-spacing: 0.08em;
-}
-.live-dot {
-    width: 7px; height: 7px; border-radius: 50%;
-    background: #22c55e;
-    animation: blink 1.4s ease-in-out infinite;
-}
-@keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.2;} }
+/* plotly container */
+.js-plotly-plot .plotly .main-svg { border-radius: 12px; }
 
-/* ─── STAT CARDS ─── */
-.stat-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
-.stat-card {
-    flex: 1; min-width: 130px;
-    background: #0d1520;
-    border: 1px solid #1a2d4a;
-    border-radius: 14px;
-    padding: 16px 18px;
-    position: relative;
-    overflow: hidden;
-    transition: border-color 0.2s;
-}
-.stat-card:hover { border-color: #2a4070; }
-.stat-card::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
-}
-.stat-card.orange::before { background: linear-gradient(90deg,#f97316,#ea580c); }
-.stat-card.green::before  { background: linear-gradient(90deg,#22c55e,#16a34a); }
-.stat-card.red::before    { background: linear-gradient(90deg,#ef4444,#dc2626); }
-.stat-card.blue::before   { background: linear-gradient(90deg,#3b82f6,#2563eb); }
-.stat-card.purple::before { background: linear-gradient(90deg,#a855f7,#9333ea); }
-.stat-card.teal::before   { background: linear-gradient(90deg,#14b8a6,#0d9488); }
-.stat-label { font-size: 10px; color: #4a6080; letter-spacing: 0.12em; font-weight: 600; margin-bottom: 8px; }
-.stat-value { font-size: 24px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: #f1f5f9; line-height: 1; }
-.stat-sub   { font-size: 11px; color: #64748b; margin-top: 5px; font-family: 'JetBrains Mono', monospace; }
-.stat-value.up   { color: #22c55e; }
-.stat-value.down { color: #ef4444; }
-.stat-value.buy  { color: #22c55e; font-size: 26px; letter-spacing: 0.04em; }
-.stat-value.sell { color: #ef4444; font-size: 26px; letter-spacing: 0.04em; }
-.stat-value.hold { color: #eab308; font-size: 26px; letter-spacing: 0.04em; }
-
-/* ─── SECTION HEADERS ─── */
-.section-header {
-    display: flex; align-items: center; gap: 10px;
-    margin-bottom: 14px; margin-top: 24px;
-}
-.section-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: #f97316;
-    box-shadow: 0 0 8px rgba(249,115,22,0.5);
-}
-.section-title {
-    font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
-    color: #64748b; text-transform: uppercase;
-}
-.section-line { flex: 1; height: 1px; background: #1a2d4a; }
-
-/* ─── INDICATOR CARDS ─── */
-.ind-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 10px;
-    margin-bottom: 20px;
-}
-.ind-card {
-    background: #0d1520;
-    border: 1px solid #1a2d4a;
-    border-radius: 12px;
-    padding: 14px 16px;
-}
-.ind-name { font-size: 10px; color: #4a6080; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 6px; }
-.ind-value { font-size: 20px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: #f1f5f9; }
-.ind-signal { font-size: 11px; font-weight: 600; margin-top: 4px; }
-.ind-signal.bull { color: #22c55e; }
-.ind-signal.bear { color: #ef4444; }
-.ind-signal.neut { color: #eab308; }
-
-/* ─── MODEL CARDS ─── */
-.model-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
-.model-card {
-    flex: 1; min-width: 160px;
-    background: #0d1520;
-    border: 1px solid #1a2d4a;
-    border-radius: 14px;
-    padding: 16px 18px;
-}
-.model-name { font-size: 10px; color: #4a6080; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 8px; }
-.model-signal { font-size: 18px; font-weight: 700; letter-spacing: 0.06em; }
-.conf-bar-bg { height: 4px; background: #1a2d4a; border-radius: 2px; margin-top: 8px; overflow: hidden; }
-.conf-bar-fill { height: 100%; border-radius: 2px; }
-
-/* ─── PRESSURE BARS ─── */
-.pressure-row { display: flex; gap: 12px; margin-bottom: 20px; }
-.pressure-card {
-    flex: 1; background: #0d1520; border: 1px solid #1a2d4a;
-    border-radius: 14px; padding: 18px;
+/* sidebar labels */
+.sidebar-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
+    color: #484f58; text-transform: uppercase; margin: 16px 0 8px;
 }
 
-/* ─── TRADING SETUP TABLE ─── */
-.setup-table { width: 100%; border-collapse: collapse; }
-.setup-table tr { border-bottom: 1px solid #1a2d4a; }
-.setup-table tr:last-child { border-bottom: none; }
-.setup-table td { padding: 10px 0; font-size: 13px; }
-.setup-table td:first-child { color: #4a6080; font-weight: 500; }
-.setup-table td:last-child { text-align: right; font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #f1f5f9; }
-.tp { color: #22c55e !important; }
-.sl { color: #ef4444 !important; }
-.entry-val { color: #3b82f6 !important; }
+/* toggle switch styling */
+.stToggle > label > div { background: #1c2333 !important; }
 
-/* ─── MTF TABLE ─── */
-.mtf-table { width: 100%; border-collapse: collapse; }
-.mtf-table th { font-size: 10px; color: #4a6080; letter-spacing: 0.1em; font-weight: 600; padding-bottom: 10px; text-align: left; }
-.mtf-table td { padding: 8px 0; font-size: 13px; border-top: 1px solid #0f1d2e; }
-.mtf-table td:first-child { color: #64748b; font-family: 'JetBrains Mono', monospace; }
-.badge {
-    display: inline-block; padding: 2px 10px; border-radius: 6px;
-    font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+/* button */
+.stButton > button {
+    background: #1c2333 !important;
+    border: 1px solid #30363d !important;
+    color: #c9d1d9 !important;
+    border-radius: 8px !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    transition: all 0.15s !important;
 }
-.badge.buy  { background: rgba(34,197,94,0.12); color: #22c55e; border: 1px solid rgba(34,197,94,0.25); }
-.badge.sell { background: rgba(239,68,68,0.12);  color: #ef4444; border: 1px solid rgba(239,68,68,0.25); }
-.badge.hold { background: rgba(234,179,8,0.12);  color: #eab308; border: 1px solid rgba(234,179,8,0.25); }
-.badge.bull { background: rgba(34,197,94,0.12); color: #22c55e; border: 1px solid rgba(34,197,94,0.25); }
-.badge.bear { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); }
-
-/* ─── Plotly chart background ─── */
-.js-plotly-plot { border-radius: 14px; }
-
-/* ─── Footer ─── */
-.footer {
-    text-align: center; font-size: 11px; color: #2a3f5a;
-    margin-top: 40px; padding-top: 16px; border-top: 1px solid #1a2d4a;
-    letter-spacing: 0.04em;
+.stButton > button:hover {
+    background: #21262d !important;
+    border-color: #388bfd !important;
+    color: #58a6ff !important;
 }
-
-/* Streamlit element overrides */
-div[data-testid="stMetric"] { display: none; }
-div[data-testid="stHorizontalBlock"] > div { gap: 12px; }
-section[data-testid="stSidebar"] { background: #080e18 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════════
-# CONSTANTS & HELPERS
-# ══════════════════════════════════════════════════════════════════
-MODEL_FILES = [
-    "render_ensemble_cls.pkl",
-    "render_reg.pkl",
-    "render_scaler.pkl",
-    "render_features.pkl",
-]
+# ═══════════════════════════════════════════════════════
+# COLOUR PALETTE
+# ═══════════════════════════════════════════════════════
+BG       = "#07090f"
+BG2      = "#0d1117"
+BG3      = "#161b22"
+BORDER   = "#21262d"
+BORDER2  = "#30363d"
+TXT      = "#c9d1d9"
+TXT2     = "#8b949e"
+TXT3     = "#484f58"
+GREEN    = "#3fb950"
+RED      = "#f85149"
+BLUE     = "#388bfd"
+ORANGE   = "#f0883e"
+PURPLE   = "#bc8cff"
+YELLOW   = "#d29922"
+TEAL     = "#39d353"
+CYAN     = "#79c0ff"
 
-CHART_BG     = "#060a10"
-GRID_COLOR   = "#0f1d2e"
-TEXT_COLOR   = "#4a6080"
-ORANGE       = "#f97316"
-GREEN        = "#22c55e"
-RED          = "#ef4444"
-BLUE         = "#3b82f6"
-PURPLE       = "#a855f7"
-YELLOW       = "#eab308"
-
-def mono(val, decimals=4):
-    return f"<span style='font-family:JetBrains Mono,monospace'>{val:.{decimals}f}</span>"
-
-def signal_class(s):
-    return s.lower() if s in ("BUY","SELL","HOLD") else "hold"
-
-def badge(text):
-    cls = signal_class(text)
-    return f"<span class='badge {cls}'>{text}</span>"
-
-def section(title):
-    st.markdown(f"""
-    <div class="section-header">
-        <div class="section-dot"></div>
-        <div class="section-title">{title}</div>
-        <div class="section-line"></div>
-    </div>""", unsafe_allow_html=True)
-
-def plotly_layout(fig, height=380, title=""):
+# ═══════════════════════════════════════════════════════
+# PLOTLY LAYOUT HELPER
+# ═══════════════════════════════════════════════════════
+def _layout(fig, h=400, title="", margin=None):
+    m = margin or dict(l=10, r=10, t=30 if title else 10, b=10)
     fig.update_layout(
-        height=height,
-        paper_bgcolor=CHART_BG,
-        plot_bgcolor=CHART_BG,
-        font=dict(family="Space Grotesk", color=TEXT_COLOR, size=11),
-        margin=dict(l=12, r=12, t=30 if title else 12, b=12),
-        title=dict(text=title, font=dict(size=12, color="#64748b"), x=0.02) if title else None,
-        xaxis=dict(gridcolor=GRID_COLOR, showgrid=True, zeroline=False,
-                   showline=False, tickfont=dict(size=10)),
-        yaxis=dict(gridcolor=GRID_COLOR, showgrid=True, zeroline=False,
-                   showline=False, tickfont=dict(size=10)),
-        legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)",
-                    font=dict(size=10), orientation="h", y=1.08),
+        height=h,
+        paper_bgcolor=BG2, plot_bgcolor=BG2,
+        font=dict(family="Inter", color=TXT2, size=11),
+        margin=m,
+        title=dict(text=title, font=dict(size=11, color=TXT3), x=0.01, y=0.98) if title else None,
+        xaxis=dict(gridcolor=BORDER, showgrid=True, zeroline=False,
+                   showline=False, tickfont=dict(size=10, color=TXT3),
+                   rangeslider=dict(visible=False)),
+        yaxis=dict(gridcolor=BORDER, showgrid=True, zeroline=False,
+                   showline=False, tickfont=dict(size=10, color=TXT3)),
+        legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0,
+                    font=dict(size=10, color=TXT2),
+                    orientation="h", y=1.06, x=0),
         hovermode="x unified",
-        hoverlabel=dict(bgcolor="#0d1520", bordercolor="#1a2d4a",
-                        font=dict(family="JetBrains Mono", size=11)),
+        hoverlabel=dict(bgcolor=BG3, bordercolor=BORDER2,
+                        font=dict(family="JetBrains Mono", size=11, color=TXT)),
+        dragmode="pan",
+        modebar=dict(bgcolor="rgba(0,0,0,0)", color=TXT3, activecolor=BLUE),
     )
     return fig
 
-# ══════════════════════════════════════════════════════════════════
-# DATA FETCHING
-# ══════════════════════════════════════════════════════════════════
-@st.cache_data(ttl=120, show_spinner=False)
-def get_inr_rate():
-    try:
-        r = requests.get(
-            "https://api.exchangerate-api.com/v4/latest/USD", timeout=8
-        )
-        return float(r.json()["rates"].get("INR", 84.0))
-    except Exception:
-        return 84.0
+CHART_CONFIG = dict(
+    scrollZoom=True,
+    displayModeBar=True,
+    modeBarButtonsToAdd=["drawline", "drawopenpath", "eraseshape"],
+    modeBarButtonsToRemove=["select2d", "lasso2d", "autoScale2d"],
+    displaylogo=False,
+    toImageButtonOptions=dict(format="png", scale=2),
+)
 
+# ═══════════════════════════════════════════════════════
+# HTML CARD HELPERS
+# ═══════════════════════════════════════════════════════
+def card(content, extra_style=""):
+    return f"""<div style="background:{BG2};border:1px solid {BORDER};border-radius:12px;
+        padding:18px 20px;{extra_style}">{content}</div>"""
+
+def label(text):
+    return f'<div style="font-size:10px;font-weight:700;letter-spacing:0.12em;color:{TXT3};text-transform:uppercase;margin-bottom:8px;">{text}</div>'
+
+def val_big(text, color=TXT):
+    return f'<div style="font-size:28px;font-weight:800;color:{color};font-family:JetBrains Mono,monospace;line-height:1;">{text}</div>'
+
+def val_sub(text, color=TXT2):
+    return f'<div style="font-size:12px;color:{color};margin-top:5px;font-family:JetBrains Mono,monospace;">{text}</div>'
+
+def sig_badge(sig):
+    c = GREEN if sig=="BUY" else RED if sig=="SELL" else YELLOW
+    bg = f"{c}18"
+    border = f"{c}35"
+    return f'<span style="display:inline-block;padding:3px 12px;border-radius:6px;font-size:12px;font-weight:700;letter-spacing:0.08em;background:{bg};color:{c};border:1px solid {border};">{sig}</span>'
+
+def accent_bar(color):
+    return f'<div style="position:absolute;top:0;left:0;right:0;height:2px;background:{color};border-radius:12px 12px 0 0;"></div>'
+
+# ═══════════════════════════════════════════════════════
+# DATA FETCHING
+# ═══════════════════════════════════════════════════════
 @st.cache_data(ttl=60, show_spinner=False)
 def get_coingecko():
     try:
@@ -318,6 +188,14 @@ def get_coingecko():
     except Exception:
         return {}
 
+@st.cache_data(ttl=120, show_spinner=False)
+def get_inr_rate():
+    try:
+        r = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=8)
+        return float(r.json()["rates"].get("INR", 84.0))
+    except Exception:
+        return 84.0
+
 @st.cache_data(ttl=300, show_spinner=False)
 def get_ohlcv(period="90d", interval="1h"):
     for ticker in ["RENDER-USD", "RNDR-USD"]:
@@ -328,7 +206,7 @@ def get_ohlcv(period="90d", interval="1h"):
                 df.columns = [c[0] for c in df.columns]
             df.index = pd.to_datetime(df.index)
             df.dropna(inplace=True)
-            if len(df) > 100:
+            if len(df) > 50:
                 return df
         except Exception:
             continue
@@ -337,109 +215,108 @@ def get_ohlcv(period="90d", interval="1h"):
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_fng():
     try:
-        r = requests.get("https://api.alternative.me/fng/?limit=30&format=json", timeout=8)
-        data = r.json()["data"][0]
-        return int(data["value"]), data["value_classification"]
+        r = requests.get("https://api.alternative.me/fng/?limit=1&format=json", timeout=8)
+        d = r.json()["data"][0]
+        return int(d["value"]), d["value_classification"]
     except Exception:
         return 50, "Neutral"
 
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════
 # INDICATORS
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════
 def add_indicators(df):
-    c, h, l, v, o = (
-        df["Close"], df["High"], df["Low"], df["Volume"], df["Open"]
-    )
     def safe(s):
         return s.replace([np.inf, -np.inf], np.nan).fillna(0)
+    c, h, l, v, o = df["Close"], df["High"], df["Low"], df["Volume"], df["Open"]
 
-    df["EMA9"]  = safe(ta.trend.EMAIndicator(c, 9).ema_indicator())
-    df["EMA20"] = safe(ta.trend.EMAIndicator(c, 20).ema_indicator())
-    df["EMA50"] = safe(ta.trend.EMAIndicator(c, 50).ema_indicator())
-    df["EMA200"]= safe(ta.trend.EMAIndicator(c, 200).ema_indicator())
-    df["SMA20"] = safe(ta.trend.SMAIndicator(c, 20).sma_indicator())
+    df["EMA9"]   = safe(ta.trend.EMAIndicator(c, 9).ema_indicator())
+    df["EMA20"]  = safe(ta.trend.EMAIndicator(c, 20).ema_indicator())
+    df["EMA50"]  = safe(ta.trend.EMAIndicator(c, 50).ema_indicator())
+    df["EMA200"] = safe(ta.trend.EMAIndicator(c, 200).ema_indicator())
 
-    macd_ = ta.trend.MACD(c)
-    df["MACD"]        = safe(macd_.macd())
-    df["MACD_SIGNAL"] = safe(macd_.macd_signal())
-    df["MACD_HIST"]   = safe(macd_.macd_diff())
+    _macd = ta.trend.MACD(c)
+    df["MACD"]       = safe(_macd.macd())
+    df["MACD_SIG"]   = safe(_macd.macd_signal())
+    df["MACD_HIST"]  = safe(_macd.macd_diff())
 
-    adx_ = ta.trend.ADXIndicator(h, l, c, 14)
-    df["ADX"]     = safe(adx_.adx())
-    df["ADX_POS"] = safe(adx_.adx_pos())
-    df["ADX_NEG"] = safe(adx_.adx_neg())
+    _adx = ta.trend.ADXIndicator(h, l, c, 14)
+    df["ADX"]     = safe(_adx.adx())
+    df["ADX_POS"] = safe(_adx.adx_pos())
+    df["ADX_NEG"] = safe(_adx.adx_neg())
 
-    df["RSI"]     = safe(ta.momentum.RSIIndicator(c, 14).rsi())
-    df["RSI7"]    = safe(ta.momentum.RSIIndicator(c, 7).rsi())
+    df["RSI"]    = safe(ta.momentum.RSIIndicator(c, 14).rsi())
+    df["RSI7"]   = safe(ta.momentum.RSIIndicator(c, 7).rsi())
 
-    stoch = ta.momentum.StochasticOscillator(h, l, c, 14, 3)
-    df["STOCH_K"] = safe(stoch.stoch())
-    df["STOCH_D"] = safe(stoch.stoch_signal())
+    _stoch = ta.momentum.StochasticOscillator(h, l, c, 14, 3)
+    df["STOCH_K"] = safe(_stoch.stoch())
+    df["STOCH_D"] = safe(_stoch.stoch_signal())
 
     df["CCI"]      = safe(ta.trend.CCIIndicator(h, l, c, 20).cci())
     df["WILLIAMS"] = safe(ta.momentum.WilliamsRIndicator(h, l, c, 14).williams_r())
     df["ROC5"]     = safe(ta.momentum.ROCIndicator(c, 5).roc())
     df["ROC20"]    = safe(ta.momentum.ROCIndicator(c, 20).roc())
 
-    bb = ta.volatility.BollingerBands(c, 20, 2)
-    df["BB_UPPER"]  = safe(bb.bollinger_hband())
-    df["BB_LOWER"]  = safe(bb.bollinger_lband())
-    df["BB_MIDDLE"] = safe(bb.bollinger_mavg())
-    df["BB_WIDTH"]  = safe(bb.bollinger_wband())
-    df["BB_PCT"]    = safe(bb.bollinger_pband())
+    _bb = ta.volatility.BollingerBands(c, 20, 2)
+    df["BB_U"] = safe(_bb.bollinger_hband())
+    df["BB_L"] = safe(_bb.bollinger_lband())
+    df["BB_M"] = safe(_bb.bollinger_mavg())
+    df["BB_W"] = safe(_bb.bollinger_wband())
+    df["BB_P"] = safe(_bb.bollinger_pband())
 
-    df["ATR"]  = safe(ta.volatility.AverageTrueRange(h, l, c, 14).average_true_range())
+    df["ATR"] = safe(ta.volatility.AverageTrueRange(h, l, c, 14).average_true_range())
 
     df["OBV"]  = safe(ta.volume.OnBalanceVolumeIndicator(c, v).on_balance_volume())
     df["MFI"]  = safe(ta.volume.MFIIndicator(h, l, c, v, 14).money_flow_index())
     df["CMF"]  = safe(ta.volume.ChaikinMoneyFlowIndicator(h, l, c, v, 20).chaikin_money_flow())
+
     try:
         df["VWAP"] = safe(ta.volume.VolumeWeightedAveragePrice(h, l, c, v).volume_weighted_average_price())
     except Exception:
-        df["VWAP"] = c
+        df["VWAP"] = c.copy()
 
-    vol_ma = v.rolling(20).mean().replace(0, np.nan)
-    df["VOL_SMA20"] = safe(vol_ma)
-    df["VOL_RATIO"] = safe(v / vol_ma)
+    vm20 = v.rolling(20).mean().replace(0, np.nan)
+    df["VOL_MA"] = safe(vm20)
+    df["VOL_R"]  = safe(v / vm20)
 
     df["RET1"]  = safe(c.pct_change(1))
     df["RET4"]  = safe(c.pct_change(4))
     df["RET24"] = safe(c.pct_change(24))
 
-    df["ema_9"]   = df["EMA9"]
-    df["ema_21"]  = safe(ta.trend.EMAIndicator(c, 21).ema_indicator())
-    df["ema_50"]  = df["EMA50"]
-    df["sma_20"]  = df["SMA20"]
+    # Features for ML compat
+    df["ema_9"]       = df["EMA9"]
+    df["ema_21"]      = safe(ta.trend.EMAIndicator(c, 21).ema_indicator())
+    df["ema_50"]      = df["EMA50"]
+    df["sma_20"]      = safe(ta.trend.SMAIndicator(c, 20).sma_indicator())
     df["macd"]        = df["MACD"]
-    df["macd_signal"] = df["MACD_SIGNAL"]
+    df["macd_signal"] = df["MACD_SIG"]
     df["macd_diff"]   = df["MACD_HIST"]
-    df["adx"]     = df["ADX"]
-    df["adx_pos"] = df["ADX_POS"]
-    df["adx_neg"] = df["ADX_NEG"]
-    df["rsi_14"]  = df["RSI"]
-    df["rsi_7"]   = df["RSI7"]
-    df["rsi_28"]  = safe(ta.momentum.RSIIndicator(c, 28).rsi())
-    df["stoch_k"] = df["STOCH_K"]
-    df["stoch_d"] = df["STOCH_D"]
-    df["cci"]     = df["CCI"]
-    df["roc_5"]   = df["ROC5"]
-    df["roc_20"]  = df["ROC20"]
-    df["williams"]= df["WILLIAMS"]
-    df["bb_upper"]= df["BB_UPPER"]
-    df["bb_lower"]= df["BB_LOWER"]
-    df["bb_width"]= df["BB_WIDTH"]
-    df["bb_pct"]  = df["BB_PCT"]
-    df["atr_14"]  = df["ATR"]
-    df["obv"]     = df["OBV"]
-    df["mfi"]     = df["MFI"]
-    df["cmf"]     = df["CMF"]
-    df["vwap"]    = df["VWAP"]
-    df["ret_1h"]  = df["RET1"]
-    df["ret_4h"]  = df["RET4"]
-    df["ret_24h"] = df["RET24"]
-    df["log_ret"] = safe(np.log(c / c.shift(1)))
-    df["vol_24h"] = safe(df["RET1"].rolling(24).std())
-    df["vol_7d"]  = safe(df["RET1"].rolling(168).std())
+    df["adx"]         = df["ADX"]
+    df["adx_pos"]     = df["ADX_POS"]
+    df["adx_neg"]     = df["ADX_NEG"]
+    df["rsi_14"]      = df["RSI"]
+    df["rsi_7"]       = df["RSI7"]
+    df["rsi_28"]      = safe(ta.momentum.RSIIndicator(c, 28).rsi())
+    df["stoch_k"]     = df["STOCH_K"]
+    df["stoch_d"]     = df["STOCH_D"]
+    df["cci"]         = df["CCI"]
+    df["roc_5"]       = df["ROC5"]
+    df["roc_20"]      = df["ROC20"]
+    df["williams"]    = df["WILLIAMS"]
+    df["bb_upper"]    = df["BB_U"]
+    df["bb_lower"]    = df["BB_L"]
+    df["bb_width"]    = df["BB_W"]
+    df["bb_pct"]      = df["BB_P"]
+    df["atr_14"]      = df["ATR"]
+    df["obv"]         = df["OBV"]
+    df["mfi"]         = df["MFI"]
+    df["cmf"]         = df["CMF"]
+    df["vwap"]        = df["VWAP"]
+    df["ret_1h"]      = df["RET1"]
+    df["ret_4h"]      = df["RET4"]
+    df["ret_24h"]     = df["RET24"]
+    df["log_ret"]     = safe(np.log(c / c.shift(1)))
+    df["vol_24h"]     = safe(df["RET1"].rolling(24).std())
+    df["vol_7d"]      = safe(df["RET1"].rolling(168).std())
 
     hl = (h - l).replace(0, np.nan)
     df["body"]       = safe((c - o).abs() / hl)
@@ -477,888 +354,944 @@ def add_indicators(df):
     df.fillna(0, inplace=True)
     return df
 
-# ══════════════════════════════════════════════════════════════════
-# MODEL PREDICTION
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════
+# ML MODELS
+# ═══════════════════════════════════════════════════════
+MODEL_FILES = ["render_ensemble_cls.pkl","render_reg.pkl","render_scaler.pkl","render_features.pkl"]
+
 def load_models():
     try:
-        ens    = joblib.load("render_ensemble_cls.pkl")
-        reg    = joblib.load("render_reg.pkl")
-        scaler = joblib.load("render_scaler.pkl")
-        feats  = joblib.load("render_features.pkl")
-        return ens, reg, scaler, feats
+        return (
+            joblib.load("render_ensemble_cls.pkl"),
+            joblib.load("render_reg.pkl"),
+            joblib.load("render_scaler.pkl"),
+            joblib.load("render_features.pkl"),
+        )
     except Exception:
         return None, None, None, None
 
-def predict(df, ens, reg, scaler, feats):
-    EXCLUDE = {"Open","High","Low","Close","Volume",
-               "future_close","future_return","label"}
-    available = [f for f in feats if f in df.columns and f not in EXCLUDE]
-    row = df.iloc[-1][available].values.astype(np.float64).reshape(1, -1)
-    row = np.nan_to_num(row, nan=0.0, posinf=0.0, neginf=0.0)
+def ml_predict(df, ens, reg, scaler, feats):
+    EXCL = {"Open","High","Low","Close","Volume","future_close","future_return","label"}
+    avail = [f for f in feats if f in df.columns and f not in EXCL]
+    row = df.iloc[-1][avail].values.astype(np.float64).reshape(1, -1)
+    row = np.nan_to_num(row)
+    full = np.zeros((1, len(feats)))
+    idx  = {f: i for i, f in enumerate(feats)}
+    for i, f in enumerate(avail):
+        full[0, idx[f]] = row[0, i]
+    Xs = scaler.transform(full)
+    lmap = {0: "SELL", 1: "HOLD", 2: "BUY"}
+    return lmap[int(ens.predict(Xs)[0])], ens.predict_proba(Xs)[0], float(reg.predict(Xs)[0])
 
-    full = np.zeros((1, len(feats)), dtype=np.float64)
-    idx_map = {f: i for i, f in enumerate(feats)}
-    for i, f in enumerate(available):
-        full[0, idx_map[f]] = row[0, i]
-
-    X_s = scaler.transform(full)
-    label_map = {0: "SELL", 1: "HOLD", 2: "BUY"}
-    cls_pred  = label_map[int(ens.predict(X_s)[0])]
-    cls_proba = ens.predict_proba(X_s)[0]
-    reg_pred  = float(reg.predict(X_s)[0])
-    return cls_pred, cls_proba, reg_pred
-
-# ══════════════════════════════════════════════════════════════════
-# TREND SCORE (rule-based fallback)
-# ══════════════════════════════════════════════════════════════════
-def compute_trend_score(latest, close_series):
+# ═══════════════════════════════════════════════════════
+# TREND SCORE
+# ═══════════════════════════════════════════════════════
+def trend_score(latest, close_s):
     ts = 0
-    ema20, ema50, ema200 = latest.get("EMA20",0), latest.get("EMA50",0), latest.get("EMA200",0)
-    rsi  = latest.get("RSI", 50)
-    macd, macd_sig = latest.get("MACD",0), latest.get("MACD_SIGNAL",0)
-    adx  = latest.get("ADX", 0)
-    vol, vol_sma = latest.get("Volume",0), latest.get("VOL_SMA20",0)
+    e20  = float(latest.get("EMA20",  0))
+    e50  = float(latest.get("EMA50",  0))
+    e200 = float(latest.get("EMA200", 0))
+    rsi  = float(latest.get("RSI",   50))
+    macd = float(latest.get("MACD",   0))
+    msig = float(latest.get("MACD_SIG", 0))
+    adx  = float(latest.get("ADX",    0))
+    vol  = float(latest.get("Volume", 0))
+    vma  = float(latest.get("VOL_MA", 1))
 
-    if ema20 > ema50:  ts += 20
-    else:              ts -= 20
-    if ema50 > ema200: ts += 20
-    else:              ts -= 20
-    if rsi >= 70:      ts -= 15
-    elif rsi >= 60:    ts += 15
-    elif rsi <= 30:    ts += 20
-    elif rsi <= 40:    ts -= 10
-    if macd > macd_sig:ts += 20
-    else:              ts -= 20
-    if adx > 25:       ts += 10
-    if len(close_series) >= 10:
-        pc10 = (close_series.iloc[-1] - close_series.iloc[-10]) / close_series.iloc[-10] * 100
-        ts += 10 if pc10 > 0 else -10
-    if vol > vol_sma:  ts += 5
-    return ts
+    if e20 > e50:  ts += 20
+    else:          ts -= 20
+    if e50 > e200: ts += 20
+    else:          ts -= 20
+    if rsi >= 70:  ts -= 15
+    elif rsi >= 60:ts += 15
+    elif rsi <= 30:ts += 20
+    elif rsi <= 40:ts -= 10
+    if macd > msig:ts += 20
+    else:          ts -= 20
+    if adx > 25:   ts += 10
+    if len(close_s) >= 10:
+        pc = (close_s.iloc[-1] - close_s.iloc[-10]) / max(close_s.iloc[-10], 1e-9) * 100
+        ts += 10 if pc > 0 else -10
+    if vol > vma:  ts += 5
+    return int(ts)
 
-# ══════════════════════════════════════════════════════════════════
-# CHARTS
-# ══════════════════════════════════════════════════════════════════
-def candlestick_chart(df, show_ema=True, show_bb=True, show_vol=True):
-    rows = 3 if show_vol else 2
-    row_heights = [0.62, 0.22, 0.16] if show_vol else [0.72, 0.28]
-    subplot_titles = ["", "VOLUME", ""] if show_vol else ["", ""]
-
+# ═══════════════════════════════════════════════════════
+# CHART BUILDERS
+# ═══════════════════════════════════════════════════════
+def chart_candles(df, show_ema, show_bb, show_vol):
+    rows      = 3 if show_vol else 2
+    rh        = [0.60, 0.20, 0.20] if show_vol else [0.72, 0.28]
     fig = make_subplots(
-        rows=rows, cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.015,
-        row_heights=row_heights,
-        subplot_titles=subplot_titles,
+        rows=rows, cols=1, shared_xaxes=True,
+        vertical_spacing=0.012, row_heights=rh,
     )
 
-    # Candlesticks
+    # ── Candles ──────────────────────────────────────
     fig.add_trace(go.Candlestick(
-        x=df.index, open=df["Open"], high=df["High"],
-        low=df["Low"],  close=df["Close"],
-        increasing_line_color=GREEN, decreasing_line_color=RED,
-        increasing_fillcolor=GREEN,  decreasing_fillcolor=RED,
-        line=dict(width=1), name="Price",
-        whiskerwidth=0.5,
+        x=df.index,
+        open=df["Open"].values, high=df["High"].values,
+        low=df["Low"].values,   close=df["Close"].values,
+        increasing=dict(line=dict(color=GREEN, width=1), fillcolor=GREEN),
+        decreasing=dict(line=dict(color=RED,   width=1), fillcolor=RED),
+        name="RNDR",
+        showlegend=True,
+        whiskerwidth=0.6,
     ), row=1, col=1)
 
+    # ── VWAP ─────────────────────────────────────────
+    if "VWAP" in df.columns:
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["VWAP"].values,
+            name="VWAP", line=dict(color=ORANGE, width=1.2, dash="dash"),
+            opacity=0.85, hoverinfo="skip",
+        ), row=1, col=1)
+
+    # ── EMA overlays ─────────────────────────────────
     if show_ema:
-        for col, color, name in [
-            ("EMA9",  "#60a5fa", "EMA9"),
-            ("EMA20", "#f97316", "EMA20"),
-            ("EMA50", "#a855f7", "EMA50"),
-            ("EMA200","#14b8a6", "EMA200"),
+        for col_name, color, name in [
+            ("EMA9",  CYAN,   "EMA9"),
+            ("EMA20", GREEN,  "EMA20"),
+            ("EMA50", PURPLE, "EMA50"),
+            ("EMA200",ORANGE, "EMA200"),
         ]:
-            if col in df.columns:
+            if col_name in df.columns:
                 fig.add_trace(go.Scatter(
-                    x=df.index, y=df[col], name=name,
-                    line=dict(color=color, width=1.2),
+                    x=df.index, y=df[col_name].values,
+                    name=name, line=dict(color=color, width=1),
                     opacity=0.9, hoverinfo="skip",
                 ), row=1, col=1)
 
-    if show_bb and "BB_UPPER" in df.columns:
+    # ── Bollinger Bands ───────────────────────────────
+    if show_bb and "BB_U" in df.columns:
         fig.add_trace(go.Scatter(
-            x=df.index, y=df["BB_UPPER"], name="BB Upper",
-            line=dict(color="#334155", width=0.8, dash="dot"),
-            hoverinfo="skip",
+            x=df.index, y=df["BB_U"].values, name="BB Upper",
+            line=dict(color=BORDER2, width=0.8),
+            hoverinfo="skip", showlegend=True,
         ), row=1, col=1)
         fig.add_trace(go.Scatter(
-            x=df.index, y=df["BB_LOWER"], name="BB Lower",
-            line=dict(color="#334155", width=0.8, dash="dot"),
-            fill="tonexty", fillcolor="rgba(51,65,85,0.08)",
-            hoverinfo="skip",
+            x=df.index, y=df["BB_L"].values, name="BB Lower",
+            line=dict(color=BORDER2, width=0.8),
+            fill="tonexty", fillcolor="rgba(48,54,61,0.12)",
+            hoverinfo="skip", showlegend=False,
         ), row=1, col=1)
         fig.add_trace(go.Scatter(
-            x=df.index, y=df["BB_MIDDLE"], name="BB Mid",
-            line=dict(color="#475569", width=0.6),
-            hoverinfo="skip",
-        ), row=1, col=1)
-
-    if "VWAP" in df.columns:
-        fig.add_trace(go.Scatter(
-            x=df.index, y=df["VWAP"], name="VWAP",
-            line=dict(color="#fb923c", width=1, dash="dash"),
-            opacity=0.8, hoverinfo="skip",
+            x=df.index, y=df["BB_M"].values, name="BB Mid",
+            line=dict(color="#444c56", width=0.6),
+            hoverinfo="skip", showlegend=False,
         ), row=1, col=1)
 
-    # Volume bars
-    if show_vol:
-        colors = [GREEN if c >= o else RED
-                  for c, o in zip(df["Close"], df["Open"])]
+    # ── Volume bars ───────────────────────────────────
+    rsi_row = 2
+    if show_vol and "Volume" in df.columns:
+        rsi_row = 3
+        vol_colors = [
+            GREEN if float(c) >= float(o) else RED
+            for c, o in zip(df["Close"].values, df["Open"].values)
+        ]
         fig.add_trace(go.Bar(
-            x=df.index, y=df["Volume"],
-            marker_color=colors, name="Volume",
-            marker_opacity=0.55, showlegend=False,
+            x=df.index, y=df["Volume"].values,
+            marker_color=vol_colors, name="Volume",
+            opacity=0.5, showlegend=False,
         ), row=2, col=1)
-        if "VOL_SMA20" in df.columns:
+        if "VOL_MA" in df.columns:
             fig.add_trace(go.Scatter(
-                x=df.index, y=df["VOL_SMA20"], name="Vol MA20",
-                line=dict(color="#f97316", width=1.2),
-                showlegend=False, hoverinfo="skip",
+                x=df.index, y=df["VOL_MA"].values,
+                line=dict(color=ORANGE, width=1),
+                name="Vol MA20", showlegend=False, hoverinfo="skip",
             ), row=2, col=1)
 
-    # RSI sub-chart
-    rsi_row = 3 if show_vol else 2
+    # ── RSI sub-chart ─────────────────────────────────
     if "RSI" in df.columns:
         fig.add_trace(go.Scatter(
-            x=df.index, y=df["RSI"], name="RSI",
-            line=dict(color="#f97316", width=1.4),
-            showlegend=False,
+            x=df.index, y=df["RSI"].values,
+            line=dict(color=ORANGE, width=1.4),
+            name="RSI(14)", showlegend=False,
         ), row=rsi_row, col=1)
-        for level, color in [(70, "#ef4444"), (30, "#22c55e"), (50, "#1a2d4a")]:
-            fig.add_hline(y=level, line_width=0.6,
-                          line_dash="dot", line_color=color,
-                          row=rsi_row, col=1)
+        for lvl, col in [(70, RED), (30, GREEN)]:
+            fig.add_hline(y=lvl, line_width=0.6, line_dash="dot",
+                          line_color=col, row=rsi_row, col=1)
+        fig.add_hline(y=50, line_width=0.4, line_color=BORDER2,
+                      row=rsi_row, col=1)
+        fig.update_yaxes(range=[0, 100], row=rsi_row, col=1)
 
-    plotly_layout(fig, height=620)
+    _layout(fig, h=640)
     fig.update_layout(
         xaxis_rangeslider_visible=False,
-        legend=dict(
-            orientation="h", y=1.02, x=0,
-            bgcolor="rgba(0,0,0,0)", font=dict(size=10),
-        ),
+        dragmode="pan",
+        newshape=dict(line_color=BLUE),
     )
     for i in range(1, rows + 1):
-        fig.update_xaxes(gridcolor=GRID_COLOR, showgrid=True, row=i, col=1)
-        fig.update_yaxes(gridcolor=GRID_COLOR, showgrid=True, row=i, col=1)
-
+        fig.update_xaxes(showgrid=True, gridcolor=BORDER,
+                         gridwidth=0.5, row=i, col=1)
+        fig.update_yaxes(showgrid=True, gridcolor=BORDER,
+                         gridwidth=0.5, row=i, col=1)
     return fig
 
-def macd_chart(df):
+def chart_macd(df):
     fig = go.Figure()
-    colors = [GREEN if v >= 0 else RED for v in df["MACD_HIST"]]
-    fig.add_trace(go.Bar(x=df.index, y=df["MACD_HIST"],
-                         marker_color=colors, name="Histogram", opacity=0.7))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD"],
+    colors = [GREEN if v >= 0 else RED for v in df["MACD_HIST"].values]
+    fig.add_trace(go.Bar(x=df.index, y=df["MACD_HIST"].values,
+                         marker_color=colors, name="Hist", opacity=0.8))
+    fig.add_trace(go.Scatter(x=df.index, y=df["MACD"].values,
                              line=dict(color=BLUE, width=1.5), name="MACD"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD_SIGNAL"],
+    fig.add_trace(go.Scatter(x=df.index, y=df["MACD_SIG"].values,
                              line=dict(color=ORANGE, width=1.5, dash="dot"), name="Signal"))
-    fig.add_hline(y=0, line_width=0.5, line_color="#1a2d4a")
-    plotly_layout(fig, height=200, title="MACD (12,26,9)")
+    fig.add_hline(y=0, line_width=0.5, line_color=BORDER2)
+    _layout(fig, h=200, title="MACD (12,26,9)")
     return fig
 
-def stoch_chart(df):
+def chart_stoch(df):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["STOCH_K"],
+    fig.add_trace(go.Scatter(x=df.index, y=df["STOCH_K"].values,
                              line=dict(color=BLUE, width=1.4), name="%K"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["STOCH_D"],
+    fig.add_trace(go.Scatter(x=df.index, y=df["STOCH_D"].values,
                              line=dict(color=ORANGE, width=1.4, dash="dot"), name="%D"))
-    for level, color in [(80, "#ef4444"), (20, "#22c55e")]:
-        fig.add_hline(y=level, line_width=0.6, line_dash="dot", line_color=color)
-    plotly_layout(fig, height=200, title="Stochastic (14,3,3)")
+    for lvl, col in [(80, RED), (20, GREEN)]:
+        fig.add_hline(y=lvl, line_width=0.6, line_dash="dot", line_color=col)
+    _layout(fig, h=200, title="Stochastic (14,3,3)")
+    fig.update_yaxes(range=[0, 100])
     return fig
 
-def volume_flow_chart(df):
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                        vertical_spacing=0.04, row_heights=[0.5, 0.5])
-    fig.add_trace(go.Scatter(x=df.index, y=df["OBV"],
-                             line=dict(color=BLUE, width=1.4), name="OBV",
-                             fill="tozeroy", fillcolor="rgba(59,130,246,0.07)"),
-                  row=1, col=1)
-    cmf_colors = [GREEN if v >= 0 else RED for v in df["CMF"]]
-    fig.add_trace(go.Bar(x=df.index, y=df["CMF"],
-                         marker_color=cmf_colors, name="CMF", opacity=0.75),
-                  row=2, col=1)
-    fig.add_hline(y=0, line_width=0.5, line_color="#1a2d4a", row=2, col=1)
-    plotly_layout(fig, height=280, title="Volume Flow  ·  OBV  +  CMF")
-    for i in [1, 2]:
-        fig.update_xaxes(gridcolor=GRID_COLOR, showgrid=True, row=i, col=1)
-        fig.update_yaxes(gridcolor=GRID_COLOR, showgrid=True, row=i, col=1)
-    return fig
-
-def adx_chart(df):
+def chart_adx(df):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["ADX"],
-                             line=dict(color=ORANGE, width=1.8), name="ADX"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["ADX_POS"],
-                             line=dict(color=GREEN, width=1.2, dash="dot"), name="+DI"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["ADX_NEG"],
-                             line=dict(color=RED, width=1.2, dash="dot"), name="−DI"))
-    fig.add_hline(y=25, line_width=0.7, line_dash="dash", line_color="#334155")
-    plotly_layout(fig, height=200, title="ADX  ·  Trend Strength")
+    fig.add_trace(go.Scatter(x=df.index, y=df["ADX"].values,
+                             line=dict(color=YELLOW, width=1.8), name="ADX"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["ADX_POS"].values,
+                             line=dict(color=GREEN, width=1, dash="dot"), name="+DI"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["ADX_NEG"].values,
+                             line=dict(color=RED, width=1, dash="dot"), name="−DI"))
+    fig.add_hline(y=25, line_width=0.7, line_dash="dash", line_color=BORDER2)
+    _layout(fig, h=200, title="ADX · Trend Strength")
     return fig
 
-def bb_width_chart(df):
+def chart_bb(df):
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         vertical_spacing=0.04, row_heights=[0.55, 0.45])
-    fig.add_trace(go.Scatter(x=df.index, y=df["BB_WIDTH"],
-                             line=dict(color=PURPLE, width=1.5), name="BB Width",
-                             fill="tozeroy", fillcolor="rgba(168,85,247,0.08)"),
-                  row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["BB_PCT"],
-                             line=dict(color="#14b8a6", width=1.4), name="BB %B"),
-                  row=2, col=1)
-    fig.add_hline(y=1.0, line_width=0.5, line_color="#ef4444", row=2, col=1)
-    fig.add_hline(y=0.0, line_width=0.5, line_color="#22c55e", row=2, col=1)
-    plotly_layout(fig, height=260, title="Bollinger Band Width  +  %B")
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["BB_W"].values, name="BB Width",
+        line=dict(color=PURPLE, width=1.5),
+        fill="tozeroy", fillcolor="rgba(188,140,255,0.07)",
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["BB_P"].values, name="BB %B",
+        line=dict(color=TEAL, width=1.4),
+    ), row=2, col=1)
+    for lvl, col in [(1, RED), (0, GREEN)]:
+        fig.add_hline(y=lvl, line_width=0.5, line_color=col, row=2, col=1)
+    _layout(fig, h=260, title="Bollinger Band Width + %B")
+    for i in [1,2]:
+        fig.update_xaxes(gridcolor=BORDER, row=i, col=1)
+        fig.update_yaxes(gridcolor=BORDER, row=i, col=1)
+    return fig
+
+def chart_volume_flow(df):
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        vertical_spacing=0.04, row_heights=[0.5, 0.5])
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["OBV"].values,
+        line=dict(color=BLUE, width=1.4), name="OBV",
+        fill="tozeroy", fillcolor="rgba(56,139,253,0.07)",
+    ), row=1, col=1)
+    cmf_colors = [GREEN if v >= 0 else RED for v in df["CMF"].values]
+    fig.add_trace(go.Bar(
+        x=df.index, y=df["CMF"].values,
+        marker_color=cmf_colors, name="CMF (Inflow/Outflow)", opacity=0.8,
+    ), row=2, col=1)
+    fig.add_hline(y=0, line_width=0.5, line_color=BORDER2, row=2, col=1)
+    _layout(fig, h=280, title="Volume Flow · OBV + CMF Inflow/Outflow")
     for i in [1, 2]:
-        fig.update_xaxes(gridcolor=GRID_COLOR, showgrid=True, row=i, col=1)
-        fig.update_yaxes(gridcolor=GRID_COLOR, showgrid=True, row=i, col=1)
+        fig.update_xaxes(gridcolor=BORDER, row=i, col=1)
+        fig.update_yaxes(gridcolor=BORDER, row=i, col=1)
     return fig
 
-def regime_gauge(score):
-    score_clamped = max(-100, min(100, score))
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=score_clamped,
-        number=dict(font=dict(family="JetBrains Mono", size=32, color="#f1f5f9")),
-        gauge=dict(
-            axis=dict(range=[-100, 100], tickwidth=0,
-                      tickcolor="#1a2d4a", tickfont=dict(size=9, color="#4a6080")),
-            bar=dict(color=GREEN if score_clamped >= 0 else RED,
-                     thickness=0.22),
-            bgcolor="#0d1520",
-            borderwidth=0,
-            steps=[
-                dict(range=[-100, -40], color="#ef444415"),
-                dict(range=[-40,   40], color="#eab30815"),
-                dict(range=[40,   100], color="#22c55e15"),
-            ],
-            threshold=dict(line=dict(color="#f97316", width=2),
-                           thickness=0.7, value=score_clamped),
-        ),
-    ))
-    fig.update_layout(
-        height=200,
-        paper_bgcolor=CHART_BG,
-        plot_bgcolor=CHART_BG,
-        font=dict(family="Space Grotesk", color="#64748b"),
-        margin=dict(l=20, r=20, t=20, b=10),
-    )
-    return fig
+# ═══════════════════════════════════════════════════════
+# SIMPLE PROGRESS BAR HTML (no gauge — avoids Plotly bug)
+# ═══════════════════════════════════════════════════════
+def regime_html(score):
+    clamped = max(-100, min(100, score))
+    pct     = int((clamped + 100) / 2)   # 0-100 scale
+    color   = GREEN if clamped >= 30 else RED if clamped <= -30 else YELLOW
+    label_  = "BULLISH" if clamped >= 30 else "BEARISH" if clamped <= -30 else "SIDEWAYS"
+    return f"""
+    <div style="background:{BG2};border:1px solid {BORDER};border-radius:12px;padding:20px;text-align:center;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;color:{TXT3};margin-bottom:16px;">MARKET REGIME</div>
+      <div style="font-size:48px;font-weight:800;color:{color};font-family:JetBrains Mono,monospace;line-height:1;">{clamped:+d}</div>
+      <div style="font-size:14px;font-weight:700;color:{color};letter-spacing:0.1em;margin:8px 0 16px;">{label_}</div>
+      <div style="height:8px;background:{BORDER};border-radius:4px;overflow:hidden;">
+        <div style="height:100%;width:{pct}%;background:{color};border-radius:4px;transition:width 0.6s;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;">
+        <span style="font-size:10px;color:{RED};">BEAR</span>
+        <span style="font-size:10px;color:{YELLOW};">NEUTRAL</span>
+        <span style="font-size:10px;color:{GREEN};">BULL</span>
+      </div>
+    </div>"""
 
-# ══════════════════════════════════════════════════════════════════
-# MAIN APP
-# ══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════
 def main():
-    # ── Top header ──────────────────────────────────────────────
-    st.markdown("""
-    <div class="top-header">
-      <div class="header-left">
-        <div class="header-logo">R</div>
-        <div>
-          <div class="header-title">RENDER NETWORK · RNDR/USDT</div>
-          <div class="header-sub">AI &amp; GPU Rendering Infrastructure · Decentralised</div>
-        </div>
-      </div>
-      <div class="live-chip">
-        <div class="live-dot"></div>
-        LIVE  ·  AUTO-REFRESH 60s
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
 
-    # ── Sidebar controls ────────────────────────────────────────
+    # ── SIDEBAR ─────────────────────────────────────────
     with st.sidebar:
-        st.markdown("### ⚙️  Chart Settings")
-        tf_opts = {"1 Hour": "1h", "4 Hours": "4h", "1 Day": "1d"}
-        period_opts = {
-            "30 Days": "30d", "60 Days": "60d",
-            "90 Days": "90d", "180 Days": "180d",
-        }
-        selected_tf = tf_opts[st.selectbox("Timeframe", list(tf_opts.keys()), index=0)]
-        selected_period = period_opts[st.selectbox("Period", list(period_opts.keys()), index=2)]
-        show_ema = st.toggle("EMA Overlays", value=True)
-        show_bb  = st.toggle("Bollinger Bands", value=True)
-        show_vol = st.toggle("Volume Sub-chart", value=True)
-        st.divider()
-        st.markdown("### 🤖  ML Models")
-        models_available = all(os.path.exists(f) for f in MODEL_FILES)
-        if models_available:
-            st.success("✅ Models loaded")
+        # RENDER Logo SVG
+        st.markdown("""
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0 20px;">
+          <svg width="38" height="38" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="50" cy="50" r="50" fill="#F0883E" opacity="0.15"/>
+            <circle cx="50" cy="50" r="38" fill="#F0883E" opacity="0.2"/>
+            <path d="M32 28H58C64.627 28 70 33.373 70 40C70 46.627 64.627 52 58 52H32V28Z" fill="#F0883E"/>
+            <path d="M32 52L52 72H40L32 62V52Z" fill="#F0883E" opacity="0.7"/>
+            <path d="M52 52L70 72H58L42 52H52Z" fill="#F0883E" opacity="0.5"/>
+          </svg>
+          <div>
+            <div style="font-size:16px;font-weight:800;color:#f0f6fc;letter-spacing:-0.3px;">RENDER</div>
+            <div style="font-size:10px;color:#484f58;letter-spacing:0.1em;font-weight:600;">AI TERMINAL</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown('<div class="sidebar-label">Timeframe</div>', unsafe_allow_html=True)
+        tf_map = {"1 Hour": "1h", "4 Hours": "4h", "1 Day": "1d"}
+        sel_tf = tf_map[st.selectbox("tf", list(tf_map.keys()), label_visibility="collapsed")]
+
+        st.markdown('<div class="sidebar-label">Period</div>', unsafe_allow_html=True)
+        per_map = {"30 Days":"30d","60 Days":"60d","90 Days":"90d","180 Days":"180d"}
+        sel_per = per_map[st.selectbox("per", list(per_map.keys()), index=2, label_visibility="collapsed")]
+
+        st.markdown('<div class="sidebar-label">Indicators</div>', unsafe_allow_html=True)
+        show_ema  = st.toggle("EMA 20/50/200", value=True)
+        show_bb   = st.toggle("Bollinger Bands", value=True)
+        show_vwap = st.toggle("VWAP", value=True)
+        show_vol  = st.toggle("Volume", value=True)
+
+        st.markdown('<div class="sidebar-label">AI Models</div>', unsafe_allow_html=True)
+        models_ok = all(os.path.exists(f) for f in MODEL_FILES)
+        if models_ok:
+            st.success("✅ Models ready")
         else:
-            st.warning("⚠️ Models not found\n\nRun `python train.py` first.\nRule-based signals active.")
-        st.divider()
-        refresh = st.button("🔄  Refresh Now", use_container_width=True)
+            st.warning("⚠️ Run `python train.py`\nRule-based signals active")
 
-    if refresh:
-        st.cache_data.clear()
-        st.rerun()
+        st.markdown('<div class="sidebar-label">Refresh</div>', unsafe_allow_html=True)
+        if st.button("↻  Refresh Data", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
-    # ── Fetch data ──────────────────────────────────────────────
-    with st.spinner("Fetching market data…"):
+        st.markdown(f"""
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid {BORDER};
+             font-size:10px;color:{TXT3};letter-spacing:0.06em;">
+          Updated: {datetime.now().strftime("%H:%M:%S")}<br>
+          Data: CoinGecko · Yahoo Finance
+        </div>""", unsafe_allow_html=True)
+
+    # ── FETCH ────────────────────────────────────────────
+    with st.spinner(""):
         cg       = get_coingecko()
         inr_rate = get_inr_rate()
-        df_raw   = get_ohlcv(period=selected_period, interval=selected_tf)
+        df_raw   = get_ohlcv(period=sel_per, interval=sel_tf)
         fng_val, fng_class = get_fng()
 
     if df_raw.empty:
-        st.error("⚠️ Could not load OHLCV data. Check your internet connection.")
+        st.error("⚠️ Could not load price data. Check internet connection.")
         st.stop()
 
-    df = add_indicators(df_raw.copy())
-    latest = df.iloc[-1]
-    close_series = df["Close"]
+    df      = add_indicators(df_raw.copy())
+    latest  = df.iloc[-1]
+    close_s = df["Close"]
 
-    # Current price
-    current_price = float(cg.get("usd", float(latest["Close"])))
-    price_inr     = current_price * inr_rate
-    change_24h    = float(cg.get("usd_24h_change", 0.0))
-    high_24h      = float(cg.get("usd_24h_high", float(df["High"].tail(24).max())))
-    low_24h       = float(cg.get("usd_24h_low", float(df["Low"].tail(24).min())))
-    vol_24h       = float(cg.get("usd_24h_vol", float(df["Volume"].tail(24).sum())))
-    mcap          = float(cg.get("usd_market_cap", 0))
+    cur_price = float(cg.get("usd", float(latest["Close"])))
+    chg24     = float(cg.get("usd_24h_change", 0.0))
+    h24       = float(cg.get("usd_24h_high",   float(df["High"].tail(24).max())))
+    l24       = float(cg.get("usd_24h_low",    float(df["Low"].tail(24).min())))
+    vol24     = float(cg.get("usd_24h_vol",    float(df["Volume"].tail(24).sum())))
+    mcap      = float(cg.get("usd_market_cap", 0))
+    price_inr = cur_price * inr_rate
 
-    # Trend score
-    trend_score = compute_trend_score(
+    ts = trend_score(
         {k: float(latest.get(k, 0)) for k in
-         ["EMA20","EMA50","EMA200","RSI","MACD","MACD_SIGNAL","ADX",
-          "Volume","VOL_SMA20"]},
-        close_series,
+         ["EMA20","EMA50","EMA200","RSI","MACD","MACD_SIG","ADX","Volume","VOL_MA"]},
+        close_s,
     )
 
-    # ML predictions
     ens, reg, scaler, feats = load_models()
     if ens and reg and scaler and feats:
-        cls_signal, cls_proba, reg_price = predict(df, ens, reg, scaler, feats)
+        cls_sig, cls_proba, reg_price = ml_predict(df, ens, reg, scaler, feats)
     else:
-        label_map = {True: "BUY", False: "SELL"}
-        cls_signal = "BUY" if trend_score >= 40 else ("SELL" if trend_score <= -40 else "HOLD")
-        cls_proba  = np.array([0.1, 0.2, 0.7]) if cls_signal == "BUY" else \
-                     np.array([0.7, 0.2, 0.1]) if cls_signal == "SELL" else \
-                     np.array([0.2, 0.6, 0.2])
-        atr = float(latest.get("ATR", current_price * 0.02))
-        reg_price = current_price * (1 + (trend_score / 100) * (atr / current_price) * 5)
+        cls_sig   = "BUY" if ts >= 40 else ("SELL" if ts <= -40 else "HOLD")
+        cls_proba = (np.array([0.1,0.2,0.7]) if cls_sig=="BUY"
+                     else np.array([0.7,0.2,0.1]) if cls_sig=="SELL"
+                     else np.array([0.2,0.6,0.2]))
+        atr_v = float(latest.get("ATR", cur_price*0.02))
+        reg_price = cur_price * (1 + (ts/100)*(atr_v/cur_price)*5)
 
-    confidence = int(min(95, max(50, max(cls_proba) * 100)))
+    conf = int(min(95, max(50, float(max(cls_proba))*100)))
 
-    # ── TOP STAT CARDS ──────────────────────────────────────────
-    is_up = change_24h >= 0
-    chg_class = "up" if is_up else "down"
-    sig_class_val = cls_signal.lower()
+    is_up   = chg24 >= 0
+    up_col  = GREEN if is_up else RED
+    sig_col = GREEN if cls_sig=="BUY" else RED if cls_sig=="SELL" else YELLOW
 
+    # ═══════════════════════════════════════════════════
+    # TOP HEADER
+    # ═══════════════════════════════════════════════════
     st.markdown(f"""
-    <div class="stat-row">
-      <div class="stat-card orange">
-        <div class="stat-label">PRICE (USD)</div>
-        <div class="stat-value">${current_price:.4f}</div>
-        <div class="stat-sub">₹{price_inr:,.2f}</div>
+    <div style="background:{BG2};border-bottom:1px solid {BORDER};
+         padding:14px 20px;margin:0 -20px 24px -20px;
+         display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <svg width="36" height="36" viewBox="0 0 100 100" fill="none">
+          <circle cx="50" cy="50" r="50" fill="#F0883E" opacity="0.15"/>
+          <path d="M28 24H58C66.284 24 73 30.716 73 39C73 47.284 66.284 54 58 54H28V24Z" fill="#F0883E"/>
+          <path d="M28 54L50 76H38L28 64V54Z" fill="#F0883E" opacity="0.6"/>
+          <path d="M50 54L73 76H61L40 54H50Z" fill="#F0883E" opacity="0.4"/>
+        </svg>
+        <div>
+          <div style="font-size:18px;font-weight:800;color:#f0f6fc;letter-spacing:-0.3px;">RENDER NETWORK · RNDR / USDT</div>
+          <div style="font-size:11px;color:{TXT3};letter-spacing:0.06em;margin-top:1px;">AI & GPU Rendering Infrastructure · Decentralised</div>
+        </div>
       </div>
-      <div class="stat-card {'green' if is_up else 'red'}">
-        <div class="stat-label">24H CHANGE</div>
-        <div class="stat-value {chg_class}">{'+'if is_up else ''}{change_24h:.2f}%</div>
-        <div class="stat-sub">H: ${high_24h:.4f}  L: ${low_24h:.4f}</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="font-size:11px;font-weight:700;font-family:JetBrains Mono,monospace;color:#f0f6fc;">${cur_price:.4f}</div>
+        <div style="font-size:12px;font-weight:600;color:{up_col};background:{up_col}18;
+             padding:3px 10px;border-radius:6px;border:1px solid {up_col}30;">
+          {'+'if is_up else ''}{chg24:.2f}%
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;background:{GREEN}12;
+             border:1px solid {GREEN}30;color:{GREEN};font-size:11px;font-weight:600;
+             padding:4px 12px;border-radius:20px;letter-spacing:0.08em;margin-left:8px;">
+          <div style="width:6px;height:6px;border-radius:50%;background:{GREEN};
+               animation:blink 1.4s ease-in-out infinite;"></div>
+          LIVE
+        </div>
       </div>
-      <div class="stat-card {'green' if cls_signal=='BUY' else 'red' if cls_signal=='SELL' else 'blue'}">
-        <div class="stat-label">AI SIGNAL</div>
-        <div class="stat-value {sig_class_val}">{cls_signal}</div>
-        <div class="stat-sub">Confidence {confidence}%</div>
-      </div>
-      <div class="stat-card purple">
-        <div class="stat-label">PREDICTED PRICE</div>
-        <div class="stat-value">${reg_price:.4f}</div>
-        <div class="stat-sub">₹{reg_price*inr_rate:,.2f}  ·  {((reg_price/current_price-1)*100):+.2f}%</div>
-      </div>
-      <div class="stat-card teal">
-        <div class="stat-label">24H VOLUME</div>
-        <div class="stat-value">${vol_24h/1e6:.2f}M</div>
-        <div class="stat-sub">₹{vol_24h*inr_rate/1e6:.1f}M  ·  MCap ${mcap/1e6:.0f}M</div>
-      </div>
-      <div class="stat-card blue">
-        <div class="stat-label">FEAR &amp; GREED</div>
-        <div class="stat-value {'up' if fng_val>60 else 'down' if fng_val<40 else ''}">{fng_val}</div>
-        <div class="stat-sub">{fng_class}</div>
-      </div>
+    </div>
+    <style>@keyframes blink{{0%,100%{{opacity:1}}50%{{opacity:0.2}}}}</style>
+    """, unsafe_allow_html=True)
+
+    # ═══════════════════════════════════════════════════
+    # STAT CARDS ROW
+    # ═══════════════════════════════════════════════════
+    cols = st.columns(6)
+    card_data = [
+        ("PRICE (USD)", f"${cur_price:.4f}", f"₹{price_inr:,.2f}", ORANGE),
+        ("24H CHANGE",  f"{'+'if is_up else ''}{chg24:.2f}%",
+         f"H: ${h24:.4f}  L: ${l24:.4f}", up_col),
+        ("AI SIGNAL",   cls_sig, f"Confidence {conf}%", sig_col),
+        ("PREDICTED",   f"${reg_price:.4f}",
+         f"₹{reg_price*inr_rate:,.2f}  {((reg_price/cur_price-1)*100):+.2f}%",
+         GREEN if reg_price >= cur_price else RED),
+        ("24H VOLUME",  f"${vol24/1e6:.2f}M",
+         f"₹{vol24*inr_rate/1e6:.1f}M  MCap ${mcap/1e9:.2f}B", BLUE),
+        ("FEAR & GREED", str(fng_val), fng_class,
+         GREEN if fng_val>60 else RED if fng_val<40 else YELLOW),
+    ]
+    for col, (lbl, main, sub, color) in zip(cols, card_data):
+        col.markdown(f"""
+        <div style="background:{BG2};border:1px solid {BORDER};border-radius:12px;
+             padding:16px;position:relative;overflow:hidden;min-height:90px;">
+          <div style="position:absolute;top:0;left:0;right:0;height:2px;background:{color};
+               border-radius:12px 12px 0 0;"></div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;color:{TXT3};margin-bottom:8px;">{lbl}</div>
+          <div style="font-size:22px;font-weight:800;color:{color};font-family:JetBrains Mono,monospace;line-height:1;">{main}</div>
+          <div style="font-size:11px;color:{TXT2};margin-top:5px;font-family:JetBrains Mono,monospace;">{sub}</div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+    # ═══════════════════════════════════════════════════
+    # TRADINGVIEW LIVE CHART — correct symbol: CRYPTO:RENDERUSD
+    # ═══════════════════════════════════════════════════
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <div style="width:7px;height:7px;border-radius:50%;background:{ORANGE};box-shadow:0 0 8px {ORANGE}60;"></div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;color:{TXT3};">TRADINGVIEW LIVE CHART</div>
+      <div style="flex:1;height:1px;background:{BORDER};"></div>
+      <div style="font-size:10px;color:{TXT3};">CRYPTO:RENDERUSD · Scroll to zoom · Drag to pan</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── TRADINGVIEW CHART (iframe embed) ────────────────────────
-    section("TRADINGVIEW LIVE CHART")
     st.components.v1.html("""
-    <div style="border-radius:14px; overflow:hidden; border:1px solid #1a2d4a;">
-    <div class="tradingview-widget-container" style="height:520px; width:100%;">
-      <div class="tradingview-widget-container__widget" style="height:100%; width:100%;"></div>
-      <script type="text/javascript"
-        src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js"
-        async>
-      {
-        "autosize": true,
-        "symbol": "BINANCE:RNDRUSDT",
-        "interval": "60",
-        "timezone": "Asia/Kolkata",
-        "theme": "dark",
-        "style": "1",
-        "locale": "en",
-        "backgroundColor": "rgba(6,10,16,1)",
-        "gridColor": "rgba(15,29,46,0.8)",
-        "hide_top_toolbar": false,
-        "hide_legend": false,
-        "allow_symbol_change": false,
-        "save_image": false,
-        "calendar": false,
-        "hide_volume": false,
-        "studies": ["RSI@tv-basicstudies","MACD@tv-basicstudies","BB@tv-basicstudies"],
-        "support_host": "https://www.tradingview.com"
-      }
-      </script>
-    </div>
+    <div style="border-radius:12px;overflow:hidden;border:1px solid #21262d;background:#0d1117;">
+      <div class="tradingview-widget-container" style="height:520px;width:100%;">
+        <div class="tradingview-widget-container__widget" style="height:100%;width:100%;"></div>
+        <script type="text/javascript"
+          src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+        {
+          "autosize": true,
+          "symbol": "CRYPTO:RENDERUSD",
+          "interval": "60",
+          "timezone": "Asia/Kolkata",
+          "theme": "dark",
+          "style": "1",
+          "locale": "en",
+          "backgroundColor": "rgba(13,17,23,1)",
+          "gridColor": "rgba(33,38,45,0.8)",
+          "hide_top_toolbar": false,
+          "hide_legend": false,
+          "hide_side_toolbar": false,
+          "allow_symbol_change": false,
+          "save_image": true,
+          "calendar": false,
+          "hide_volume": false,
+          "studies": ["RSI@tv-basicstudies","MACD@tv-basicstudies","BB@tv-basicstudies","Volume@tv-basicstudies"],
+          "support_host": "https://www.tradingview.com"
+        }
+        </script>
+      </div>
     </div>
     """, height=540)
 
-    # ── LOCAL CANDLESTICK CHART ─────────────────────────────────
-    section("RNDR OHLCV CHART  ·  LOCAL DATA")
-    c1, c2, c3 = st.columns([1, 1, 1])
-    with c1:
-        show_ema_c = st.checkbox("EMA Lines", value=show_ema, key="ema_c")
-    with c2:
-        show_bb_c = st.checkbox("Bollinger Bands", value=show_bb, key="bb_c")
-    with c3:
-        show_vol_c = st.checkbox("Volume", value=show_vol, key="vol_c")
+    # ═══════════════════════════════════════════════════
+    # LOCAL OHLCV CHART (Plotly — full scroll/zoom)
+    # ═══════════════════════════════════════════════════
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:8px;margin:24px 0 12px;">
+      <div style="width:7px;height:7px;border-radius:50%;background:{ORANGE};box-shadow:0 0 8px {ORANGE}60;"></div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;color:{TXT3};">RNDR OHLCV · LOCAL DATA</div>
+      <div style="flex:1;height:1px;background:{BORDER};"></div>
+      <div style="font-size:10px;color:{TXT3};">Scroll wheel = zoom · Click+drag = pan · Double-click = reset</div>
+    </div>""", unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+    ema_cb  = c1.checkbox("EMA Overlays",    value=show_ema,  key="cb_ema")
+    bb_cb   = c2.checkbox("Bollinger Bands", value=show_bb,   key="cb_bb")
+    vol_cb  = c3.checkbox("Volume",          value=show_vol,  key="cb_vol")
 
     st.plotly_chart(
-        candlestick_chart(df, show_ema_c, show_bb_c, show_vol_c),
-        use_container_width=True, config={"displayModeBar": False},
+        chart_candles(df, ema_cb, bb_cb, vol_cb),
+        use_container_width=True,
+        config=CHART_CONFIG,
     )
 
-    # ══════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════
     # TECHNICAL INDICATORS GRID
-    # ══════════════════════════════════════════════════════════════
-    section("TECHNICAL INDICATORS")
+    # ═══════════════════════════════════════════════════
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:8px;margin:24px 0 14px;">
+      <div style="width:7px;height:7px;border-radius:50%;background:{ORANGE};box-shadow:0 0 8px {ORANGE}60;"></div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;color:{TXT3};">TECHNICAL INDICATORS</div>
+      <div style="flex:1;height:1px;background:{BORDER};"></div>
+    </div>""", unsafe_allow_html=True)
 
-    rsi   = float(latest.get("RSI", 50))
-    macd_val  = float(latest.get("MACD", 0))
-    macd_sig  = float(latest.get("MACD_SIGNAL", 0))
-    adx_val   = float(latest.get("ADX", 0))
-    stoch_k   = float(latest.get("STOCH_K", 50))
-    atr_val   = float(latest.get("ATR", 0))
-    bb_width  = float(latest.get("BB_WIDTH", 0))
-    cci_val   = float(latest.get("CCI", 0))
-    mfi_val   = float(latest.get("MFI", 50))
-    cmf_val   = float(latest.get("CMF", 0))
-    williams  = float(latest.get("WILLIAMS", -50))
-    roc5      = float(latest.get("ROC5", 0))
-    ema9_v    = float(latest.get("EMA9", current_price))
-    ema20_v   = float(latest.get("EMA20", current_price))
-    ema50_v   = float(latest.get("EMA50", current_price))
+    rsi_v    = float(latest.get("RSI",      50))
+    macd_h   = float(latest.get("MACD_HIST", 0))
+    adx_v    = float(latest.get("ADX",      0))
+    stoch_kv = float(latest.get("STOCH_K",  50))
+    atr_v    = float(latest.get("ATR",      cur_price*0.02))
+    bb_wv    = float(latest.get("BB_W",     0))
+    cci_v    = float(latest.get("CCI",      0))
+    mfi_v    = float(latest.get("MFI",      50))
+    cmf_v    = float(latest.get("CMF",      0))
+    wil_v    = float(latest.get("WILLIAMS", -50))
+    roc_v    = float(latest.get("ROC5",     0))
+    e9       = float(latest.get("EMA9",     cur_price))
+    e20_v    = float(latest.get("EMA20",    cur_price))
+    e50_v    = float(latest.get("EMA50",    cur_price))
 
     def rsi_sig(r):
-        if r >= 70: return "OVERBOUGHT", "bear"
-        if r <= 30: return "OVERSOLD", "bull"
-        if r >= 55: return "BULLISH", "bull"
-        return "NEUTRAL", "neut"
+        if r>=70: return "OVERBOUGHT", RED
+        if r<=30: return "OVERSOLD",   GREEN
+        if r>=55: return "BULLISH",    GREEN
+        return "NEUTRAL", YELLOW
 
-    def macd_sig_fn(m, s): return ("BULLISH CROSS", "bull") if m > s else ("BEARISH CROSS", "bear")
-    def adx_sig_fn(a): return ("STRONG TREND", "bull") if a > 25 else ("WEAK TREND", "neut")
-    def stoch_sig_fn(k): return ("OVERBOUGHT", "bear") if k > 80 else ("OVERSOLD", "bull") if k < 20 else ("NEUTRAL", "neut")
-    def cci_sig_fn(c): return ("OVERBOUGHT", "bear") if c > 100 else ("OVERSOLD", "bull") if c < -100 else ("NEUTRAL", "neut")
-    def cmf_sig_fn(c): return ("INFLOW", "bull") if c > 0 else ("OUTFLOW", "bear")
-    def mfi_sig_fn(m): return ("OVERBOUGHT", "bear") if m > 80 else ("OVERSOLD", "bull") if m < 20 else ("NEUTRAL", "neut")
+    def sig_fn(cond_bull, cond_bear, lbl_b, lbl_n, lbl_s):
+        if cond_bull: return lbl_b, GREEN
+        if cond_bear: return lbl_s, RED
+        return lbl_n, YELLOW
 
-    rsi_txt,   rsi_cls   = rsi_sig(rsi)
-    macd_txt,  macd_cls  = macd_sig_fn(macd_val, macd_sig)
-    adx_txt,   adx_cls   = adx_sig_fn(adx_val)
-    stoch_txt, stoch_cls = stoch_sig_fn(stoch_k)
-    cci_txt,   cci_cls   = cci_sig_fn(cci_val)
-    cmf_txt,   cmf_cls   = cmf_sig_fn(cmf_val)
-    mfi_txt,   mfi_cls   = mfi_sig_fn(mfi_val)
+    ema_align = e9>e20_v and e20_v>e50_v
+    ema_bear  = e9<e20_v and e20_v<e50_v
+    ema_lbl   = "ALIGNED BULL" if ema_align else ("ALIGNED BEAR" if ema_bear else "MIXED")
+    ema_col   = GREEN if ema_align else (RED if ema_bear else YELLOW)
 
-    ema_align = ema9_v > ema20_v and ema20_v > ema50_v
-    ema_txt   = "ALIGNED BULL" if ema_align else ("ALIGNED BEAR" if ema9_v < ema20_v and ema20_v < ema50_v else "MIXED")
-    ema_cls   = "bull" if ema_align else ("bear" if not ema_align and ema9_v < ema50_v else "neut")
+    inds = [
+        ("RSI (14)",    f"{rsi_v:.1f}",                 *rsi_sig(rsi_v)),
+        ("MACD HIST",   f"{macd_h:+.4f}",              *sig_fn(macd_h>0,macd_h<0,"BULLISH","NEUTRAL","BEARISH")),
+        ("ADX (14)",    f"{adx_v:.1f}",                 *sig_fn(adx_v>25,adx_v<15,"STRONG","MODERATE","WEAK")),
+        ("STOCH %K",    f"{stoch_kv:.1f}",              *sig_fn(stoch_kv<20,stoch_kv>80,"OVERSOLD","NEUTRAL","OVERBOUGHT")),
+        ("ATR (14)",    f"${atr_v:.4f}",                "VOLATILITY", BLUE),
+        ("BB WIDTH",    f"{bb_wv:.2f}%",                *sig_fn(bb_wv<2,bb_wv>8,"LOW VOL","NORMAL","HIGH VOL")),
+        ("CCI (20)",    f"{cci_v:.1f}",                 *sig_fn(cci_v<-100,cci_v>100,"OVERSOLD","NEUTRAL","OVERBOUGHT")),
+        ("MFI (14)",    f"{mfi_v:.1f}",                 *sig_fn(mfi_v<20,mfi_v>80,"OVERSOLD","NEUTRAL","OVERBOUGHT")),
+        ("CMF (20)",    f"{cmf_v:+.3f}",               *sig_fn(cmf_v>0,cmf_v<0,"INFLOW","NEUTRAL","OUTFLOW")),
+        ("WILLIAMS %R", f"{wil_v:.1f}",                 *sig_fn(wil_v<-80,wil_v>-20,"OVERSOLD","NEUTRAL","OVERBOUGHT")),
+        ("ROC (5)",     f"{roc_v:+.2f}%",              *sig_fn(roc_v>0,roc_v<0,"POSITIVE","NEUTRAL","NEGATIVE")),
+        ("EMA ALIGN",   ema_lbl,                         ema_lbl, ema_col),
+    ]
 
-    inds_html = ""
-    for name, val, sig_txt, sig_cls in [
-        ("RSI (14)",    f"{rsi:.1f}",          rsi_txt,   rsi_cls),
-        ("MACD HIST",   f"{macd_val-macd_sig:+.4f}", macd_txt, macd_cls),
-        ("ADX (14)",    f"{adx_val:.1f}",       adx_txt,   adx_cls),
-        ("STOCH %K",    f"{stoch_k:.1f}",       stoch_txt, stoch_cls),
-        ("ATR (14)",    f"${atr_val:.4f}",      "VOLATILITY", "neut"),
-        ("BB WIDTH",    f"{bb_width:.2f}%",     "LOW" if bb_width<2 else "HIGH", "bull" if bb_width<2 else "bear"),
-        ("CCI (20)",    f"{cci_val:.1f}",       cci_txt,   cci_cls),
-        ("MFI (14)",    f"{mfi_val:.1f}",       mfi_txt,   mfi_cls),
-        ("CMF (20)",    f"{cmf_val:+.3f}",      cmf_txt,   cmf_cls),
-        ("WILLIAMS %R", f"{williams:.1f}",      "OVERSOLD" if williams<-80 else "OVERBOUGHT" if williams>-20 else "NEUTRAL", "bull" if williams<-80 else "bear" if williams>-20 else "neut"),
-        ("ROC (5)",     f"{roc5:+.2f}%",        "POSITIVE" if roc5>0 else "NEGATIVE", "bull" if roc5>0 else "bear"),
-        ("EMA ALIGN",   ema_txt,                ema_txt,   ema_cls),
+    # Render in 4-column grid
+    rows_of_4 = [inds[i:i+4] for i in range(0, len(inds), 4)]
+    for row in rows_of_4:
+        cols_ind = st.columns(len(row))
+        for col_i, (name, vl, sig_txt, sig_col_i) in zip(cols_ind, row):
+            col_i.markdown(f"""
+            <div style="background:{BG2};border:1px solid {BORDER};border-radius:12px;
+                 padding:14px 16px;border-left:2px solid {sig_col_i};">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;color:{TXT3};margin-bottom:8px;">{name}</div>
+              <div style="font-size:20px;font-weight:700;font-family:JetBrains Mono,monospace;color:#f0f6fc;">{vl}</div>
+              <div style="font-size:11px;font-weight:600;color:{sig_col_i};margin-top:4px;">{sig_txt}</div>
+            </div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # indicator sub-charts (2x2)
+    colL, colR = st.columns(2)
+    with colL:
+        st.plotly_chart(chart_macd(df), use_container_width=True, config=CHART_CONFIG)
+    with colR:
+        st.plotly_chart(chart_stoch(df), use_container_width=True, config=CHART_CONFIG)
+    colL2, colR2 = st.columns(2)
+    with colL2:
+        st.plotly_chart(chart_adx(df), use_container_width=True, config=CHART_CONFIG)
+    with colR2:
+        st.plotly_chart(chart_bb(df), use_container_width=True, config=CHART_CONFIG)
+
+    # ═══════════════════════════════════════════════════
+    # VOLUME & FLOW
+    # ═══════════════════════════════════════════════════
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:8px;margin:24px 0 12px;">
+      <div style="width:7px;height:7px;border-radius:50%;background:{ORANGE};box-shadow:0 0 8px {ORANGE}60;"></div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;color:{TXT3};">VOLUME · FLOW ANALYSIS · INFLOW / OUTFLOW</div>
+      <div style="flex:1;height:1px;background:{BORDER};"></div>
+    </div>""", unsafe_allow_html=True)
+
+    st.plotly_chart(chart_volume_flow(df), use_container_width=True, config=CHART_CONFIG)
+
+    vol_r        = float(latest.get("VOL_R", 1.0))
+    whale_pct    = float(df["whale"].tail(24).mean() * 100)
+    buy_pres     = max(0.0, min(100.0, float(50 + ts)))
+    sell_pres    = 100.0 - buy_pres
+    buy_col      = GREEN if buy_pres > 55 else YELLOW
+    sell_col     = RED if sell_pres > 55 else YELLOW
+
+    vc = st.columns(4)
+    for col_v, lbl, vl, sub, c in [
+        (vc[0], "VOLUME SPIKE",  f"{vol_r:.2f}×",  "Above Avg" if vol_r>1 else "Below Avg", GREEN if vol_r>1 else RED),
+        (vc[1], "BUY PRESSURE",  f"{buy_pres:.1f}%","Dominant" if buy_pres>55 else "Weak",   buy_col),
+        (vc[2], "SELL PRESSURE", f"{sell_pres:.1f}%","Dominant" if sell_pres>55 else "Weak", sell_col),
+        (vc[3], "WHALE ACTIVITY",f"{whale_pct:.1f}%","Spikes 24h",                            ORANGE),
     ]:
-        inds_html += f"""
-        <div class="ind-card">
-          <div class="ind-name">{name}</div>
-          <div class="ind-value">{val}</div>
-          <div class="ind-signal {sig_cls}">{sig_txt}</div>
-        </div>"""
-
-    st.markdown(f'<div class="ind-grid">{inds_html}</div>', unsafe_allow_html=True)
-
-    # ── Indicator sub-charts ────────────────────────────────────
-    col_l, col_r = st.columns(2)
-    with col_l:
-        st.plotly_chart(macd_chart(df), use_container_width=True,
-                        config={"displayModeBar": False})
-    with col_r:
-        st.plotly_chart(stoch_chart(df), use_container_width=True,
-                        config={"displayModeBar": False})
-
-    col_l2, col_r2 = st.columns(2)
-    with col_l2:
-        st.plotly_chart(adx_chart(df), use_container_width=True,
-                        config={"displayModeBar": False})
-    with col_r2:
-        st.plotly_chart(bb_width_chart(df), use_container_width=True,
-                        config={"displayModeBar": False})
-
-    # ══════════════════════════════════════════════════════════════
-    # VOLUME & FLOW ANALYSIS
-    # ══════════════════════════════════════════════════════════════
-    section("VOLUME  ·  FLOW ANALYSIS  ·  INFLOW  /  OUTFLOW")
-    st.plotly_chart(volume_flow_chart(df), use_container_width=True,
-                    config={"displayModeBar": False})
-
-    vol_ratio = float(latest.get("VOL_RATIO", 1.0))
-    obv_val   = float(latest.get("OBV", 0))
-    whale_pct = float(df["whale"].tail(24).mean() * 100)
-
-    buy_pressure_pct = max(0, min(100, 50 + trend_score))
-    sell_pressure_pct = 100 - buy_pressure_pct
-
-    vc1, vc2, vc3, vc4 = st.columns(4)
-    for col, label, val, sub, accent in [
-        (vc1, "VOLUME SPIKE",    f"{vol_ratio:.2f}×",
-         "Above Avg" if vol_ratio > 1 else "Below Avg", GREEN if vol_ratio > 1 else RED),
-        (vc2, "BUY PRESSURE",    f"{buy_pressure_pct:.1f}%",
-         "Dominant" if buy_pressure_pct > 55 else "Weak", GREEN),
-        (vc3, "SELL PRESSURE",   f"{sell_pressure_pct:.1f}%",
-         "Dominant" if sell_pressure_pct > 55 else "Weak", RED),
-        (vc4, "WHALE ACTIVITY",  f"{whale_pct:.1f}%",
-         "Whale Spikes 24h", ORANGE),
-    ]:
-        col.markdown(f"""
-        <div class="stat-card blue" style="border-top-color:{accent}">
-          <div class="stat-label">{label}</div>
-          <div class="stat-value" style="font-size:22px;color:{accent}">{val}</div>
-          <div class="stat-sub">{sub}</div>
+        col_v.markdown(f"""
+        <div style="background:{BG2};border:1px solid {BORDER};border-radius:12px;
+             padding:14px;border-top:2px solid {c};">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.1em;color:{TXT3};margin-bottom:6px;">{lbl}</div>
+          <div style="font-size:22px;font-weight:800;font-family:JetBrains Mono,monospace;color:{c};">{vl}</div>
+          <div style="font-size:11px;color:{TXT2};margin-top:4px;">{sub}</div>
         </div>""", unsafe_allow_html=True)
 
-    # Buy / Sell pressure bar
-    bp_fig = go.Figure(go.Bar(
-        x=[buy_pressure_pct, sell_pressure_pct],
-        y=["Pressure", "Pressure"],
-        orientation="h",
-        marker_color=[GREEN, RED],
-        text=[f"BUY {buy_pressure_pct:.1f}%", f"SELL {sell_pressure_pct:.1f}%"],
-        textposition="inside",
-        textfont=dict(color="#fff", size=12, family="JetBrains Mono"),
-        insidetextanchor="middle",
-    ))
-    bp_fig.update_layout(
-        height=60, paper_bgcolor=CHART_BG, plot_bgcolor=CHART_BG,
-        margin=dict(l=0, r=0, t=0, b=0),
-        barmode="stack",
-        xaxis=dict(visible=False), yaxis=dict(visible=False),
-        showlegend=False,
-    )
-    st.plotly_chart(bp_fig, use_container_width=True, config={"displayModeBar": False})
+    # Buy/Sell pressure bar
+    st.markdown(f"""
+    <div style="background:{BG2};border:1px solid {BORDER};border-radius:10px;
+         overflow:hidden;height:32px;display:flex;margin-top:10px;">
+      <div style="width:{buy_pres}%;background:{GREEN};display:flex;align-items:center;
+           justify-content:center;font-size:12px;font-weight:700;color:#fff;font-family:JetBrains Mono,monospace;">
+        BUY {buy_pres:.1f}%
+      </div>
+      <div style="flex:1;background:{RED};display:flex;align-items:center;
+           justify-content:center;font-size:12px;font-weight:700;color:#fff;font-family:JetBrains Mono,monospace;">
+        SELL {sell_pres:.1f}%
+      </div>
+    </div>""", unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════
-    # ML CLASSIFICATION & REGRESSION
-    # ══════════════════════════════════════════════════════════════
-    section("AI  ·  CLASSIFICATION  &  REGRESSION  PREDICTIONS")
+    # ═══════════════════════════════════════════════════
+    # AI PREDICTIONS
+    # ═══════════════════════════════════════════════════
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:8px;margin:28px 0 14px;">
+      <div style="width:7px;height:7px;border-radius:50%;background:{ORANGE};box-shadow:0 0 8px {ORANGE}60;"></div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;color:{TXT3};">AI · CLASSIFICATION & REGRESSION PREDICTIONS</div>
+      <div style="flex:1;height:1px;background:{BORDER};"></div>
+    </div>""", unsafe_allow_html=True)
 
-    col_cls, col_reg, col_gauge = st.columns([1.3, 1.3, 1])
+    pCls, pReg, pReg2 = st.columns([1.2, 1.2, 1])
 
-    with col_cls:
-        proba_sell = float(cls_proba[0]) * 100
-        proba_hold = float(cls_proba[1]) * 100
-        proba_buy  = float(cls_proba[2]) * 100
+    # Classification card
+    with pCls:
+        p_sell = float(cls_proba[0]) * 100
+        p_hold = float(cls_proba[1]) * 100
+        p_buy  = float(cls_proba[2]) * 100
 
-        def bar_html(label, pct, color):
+        def prob_bar(label_, pct, col):
             return f"""
             <div style="margin-bottom:12px;">
               <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                <span style="font-size:11px;color:#4a6080;font-weight:600;letter-spacing:0.08em">{label}</span>
-                <span style="font-size:12px;color:{color};font-family:JetBrains Mono,monospace;font-weight:700">{pct:.1f}%</span>
+                <span style="font-size:11px;color:{TXT3};font-weight:600;letter-spacing:0.08em;">{label_}</span>
+                <span style="font-size:12px;color:{col};font-family:JetBrains Mono,monospace;font-weight:700;">{pct:.1f}%</span>
               </div>
-              <div style="height:5px;background:#0f1d2e;border-radius:3px;overflow:hidden;">
-                <div style="height:100%;width:{pct}%;background:{color};border-radius:3px;"></div>
+              <div style="height:5px;background:{BORDER};border-radius:3px;overflow:hidden;">
+                <div style="height:100%;width:{pct}%;background:{col};border-radius:3px;"></div>
               </div>
             </div>"""
 
-        sig_color = GREEN if cls_signal == "BUY" else RED if cls_signal == "SELL" else YELLOW
         st.markdown(f"""
-        <div style="background:#0d1520;border:1px solid #1a2d4a;border-radius:14px;padding:20px;">
-          <div style="font-size:10px;color:#4a6080;letter-spacing:0.12em;font-weight:600;margin-bottom:14px;">CLASSIFICATION MODEL</div>
-          <div style="font-size:36px;font-weight:800;color:{sig_color};letter-spacing:0.06em;margin-bottom:4px;">{cls_signal}</div>
-          <div style="font-size:12px;color:#4a6080;margin-bottom:20px;">Ensemble  ·  XGBoost + LightGBM + RandomForest</div>
-          {bar_html("BUY", proba_buy, GREEN)}
-          {bar_html("HOLD", proba_hold, YELLOW)}
-          {bar_html("SELL", proba_sell, RED)}
-          <div style="margin-top:16px;padding-top:14px;border-top:1px solid #1a2d4a;display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-size:11px;color:#4a6080;">Confidence</span>
-            <span style="font-size:16px;font-weight:700;font-family:JetBrains Mono,monospace;color:{sig_color}">{confidence}%</span>
+        <div style="background:{BG2};border:1px solid {BORDER};border-radius:12px;
+             padding:22px;border-top:2px solid {sig_col};height:100%;">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;color:{TXT3};margin-bottom:14px;">CLASSIFICATION MODEL</div>
+          <div style="font-size:40px;font-weight:900;color:{sig_col};font-family:JetBrains Mono,monospace;
+               letter-spacing:0.04em;margin-bottom:4px;">{cls_sig}</div>
+          <div style="font-size:11px;color:{TXT3};margin-bottom:20px;">Ensemble · XGBoost + LightGBM + RandomForest</div>
+          {prob_bar("BUY",  p_buy,  GREEN)}
+          {prob_bar("HOLD", p_hold, YELLOW)}
+          {prob_bar("SELL", p_sell, RED)}
+          <div style="margin-top:16px;padding-top:14px;border-top:1px solid {BORDER};
+               display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:11px;color:{TXT3};">Confidence</span>
+            <span style="font-size:18px;font-weight:800;font-family:JetBrains Mono,monospace;color:{sig_col};">{conf}%</span>
           </div>
-        </div>
-        """, unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
 
-    with col_reg:
-        reg_chg    = (reg_price / current_price - 1) * 100
-        reg_color  = GREEN if reg_chg >= 0 else RED
-        atr_v      = float(latest.get("ATR", current_price * 0.02))
-        r1h  = current_price * (1 + (trend_score / 100) * (atr_v / current_price) * 1)
-        r4h  = current_price * (1 + (trend_score / 100) * (atr_v / current_price) * 2)
-        r24h = reg_price
-        sigma = atr_v * 2
+    # Regression card
+    with pReg:
+        reg_chg = (reg_price / cur_price - 1) * 100
+        reg_col = GREEN if reg_chg >= 0 else RED
+        atr_v2  = float(latest.get("ATR", cur_price*0.02))
+        r1h     = cur_price * (1 + (ts/100)*(atr_v2/cur_price)*1)
+        r4h     = cur_price * (1 + (ts/100)*(atr_v2/cur_price)*2)
+        r24h    = reg_price
+        sigma   = atr_v2 * 2
 
-        def reg_row_html(horizon, price, base):
-            chg = (price / base - 1) * 100
-            col = GREEN if chg >= 0 else RED
+        def reg_row_html(hor, price):
+            chg = (price/cur_price-1)*100
+            cc  = GREEN if chg>=0 else RED
             return f"""
-            <tr>
-              <td style="color:#4a6080;font-size:12px;padding:8px 0;">{horizon}</td>
-              <td style="text-align:right;font-family:JetBrains Mono,monospace;font-weight:700;font-size:13px;">
-                <span style="color:{col}">${price:.4f}</span>
-                <span style="color:{col};font-size:11px;margin-left:8px;">{chg:+.2f}%</span>
+            <tr style="border-top:1px solid {BORDER};">
+              <td style="font-size:12px;color:{TXT3};padding:9px 0;">{hor}</td>
+              <td style="text-align:right;font-family:JetBrains Mono,monospace;">
+                <span style="font-size:13px;font-weight:700;color:{cc};">${price:.4f}</span>
+                <span style="font-size:11px;color:{cc};margin-left:8px;">{chg:+.2f}%</span>
               </td>
             </tr>"""
 
         st.markdown(f"""
-        <div style="background:#0d1520;border:1px solid #1a2d4a;border-radius:14px;padding:20px;">
-          <div style="font-size:10px;color:#4a6080;letter-spacing:0.12em;font-weight:600;margin-bottom:14px;">REGRESSION FORECAST</div>
-          <div style="font-size:36px;font-weight:800;color:{reg_color};font-family:JetBrains Mono,monospace;margin-bottom:2px;">${reg_price:.4f}</div>
-          <div style="font-size:12px;color:#4a6080;margin-bottom:20px;">₹{reg_price*inr_rate:,.2f}  ·  {reg_chg:+.2f}% expected</div>
+        <div style="background:{BG2};border:1px solid {BORDER};border-radius:12px;
+             padding:22px;border-top:2px solid {reg_col};height:100%;">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;color:{TXT3};margin-bottom:14px;">REGRESSION FORECAST</div>
+          <div style="font-size:40px;font-weight:900;color:{reg_col};font-family:JetBrains Mono,monospace;
+               margin-bottom:4px;">${reg_price:.4f}</div>
+          <div style="font-size:12px;color:{TXT3};margin-bottom:20px;">
+            ₹{reg_price*inr_rate:,.2f} · {reg_chg:+.2f}% expected
+          </div>
           <table style="width:100%;border-collapse:collapse;">
-            <tr style="border-bottom:1px solid #1a2d4a;">
-              <th style="font-size:10px;color:#4a6080;letter-spacing:0.1em;padding-bottom:8px;text-align:left;">HORIZON</th>
-              <th style="font-size:10px;color:#4a6080;letter-spacing:0.1em;padding-bottom:8px;text-align:right;">TARGET PRICE</th>
+            <tr>
+              <th style="font-size:10px;color:{TXT3};letter-spacing:0.1em;text-align:left;padding-bottom:8px;">HORIZON</th>
+              <th style="font-size:10px;color:{TXT3};letter-spacing:0.1em;text-align:right;padding-bottom:8px;">TARGET</th>
             </tr>
-            {reg_row_html("1 Hour",  r1h,  current_price)}
-            {reg_row_html("4 Hours", r4h,  current_price)}
-            {reg_row_html("24 Hours",r24h, current_price)}
+            {reg_row_html("1 Hour",   r1h)}
+            {reg_row_html("4 Hours",  r4h)}
+            {reg_row_html("24 Hours", r24h)}
           </table>
-          <div style="margin-top:14px;padding-top:12px;border-top:1px solid #1a2d4a;">
-            <div style="font-size:10px;color:#4a6080;margin-bottom:4px;">CONFIDENCE INTERVAL (±1σ)</div>
-            <div style="font-size:12px;color:#64748b;font-family:JetBrains Mono,monospace;">
-              ${max(0,r24h-sigma):.4f}  —  ${r24h+sigma:.4f}
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid {BORDER};">
+            <div style="font-size:10px;color:{TXT3};margin-bottom:4px;">CONFIDENCE INTERVAL (±1σ)</div>
+            <div style="font-size:12px;font-family:JetBrains Mono,monospace;color:{TXT2};">
+              ${max(0, r24h-sigma):.4f} — ${r24h+sigma:.4f}
             </div>
           </div>
-        </div>
-        """, unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
 
-    with col_gauge:
-        regime = ("BULLISH" if trend_score >= 40
-                  else "BEARISH" if trend_score <= -40 else "SIDEWAYS")
-        regime_color = GREEN if regime=="BULLISH" else RED if regime=="BEARISH" else YELLOW
-        st.plotly_chart(regime_gauge(trend_score), use_container_width=True,
-                        config={"displayModeBar": False})
-        st.markdown(f"""
-        <div style="text-align:center;margin-top:-10px;">
-          <div style="font-size:18px;font-weight:700;color:{regime_color};letter-spacing:0.06em;">{regime}</div>
-          <div style="font-size:11px;color:#4a6080;margin-top:4px;">Trend Score: {trend_score:+d}</div>
-        </div>
-        """, unsafe_allow_html=True)
+    # Regime panel (pure HTML — NO Plotly gauge to avoid crash)
+    with pReg2:
+        st.markdown(regime_html(ts), unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════
-    # MULTI-TIMEFRAME + MARKET REGIME
-    # ══════════════════════════════════════════════════════════════
-    section("MULTI-TIMEFRAME  ·  MARKET REGIME")
-    mtf_col, regime_col = st.columns([1.4, 1])
+        # Market regime details
+        trend_str = "Strong" if abs(ts)>60 else "Moderate" if abs(ts)>30 else "Weak"
+        vol_regime= "High" if vol_r>1.5 else "Normal" if vol_r>0.8 else "Low"
+        struct    = "Bullish" if ts>=30 else "Bearish" if ts<=-30 else "Ranging"
+        brkout    = "Confirmed" if abs(ts)>50 else "Possible" if abs(ts)>30 else "None"
+        mom       = "Strong Bull" if ts>60 else "Bullish" if ts>30 else "Strong Bear" if ts<-60 else "Bearish" if ts<-30 else "Neutral"
 
-    with mtf_col:
-        ema_align_str = "20>50>200" if ema20_v > ema50_v and ema50_v > float(latest.get("EMA200", 0)) else "20<50<200"
-
-        def mtf_signal(noise):
-            base = trend_score + noise
-            return "BUY" if base >= 35 else "SELL" if base <= -35 else "HOLD"
-
-        mtf_data = [
-            ("15 MIN",  mtf_signal(+5),  ema_align_str, f"{rsi+2:.1f}"),
-            ("1 HOUR",  cls_signal,       ema_align_str, f"{rsi:.1f}"),
-            ("4 HOUR",  mtf_signal(-3),   ema_align_str, f"{rsi-2:.1f}"),
-            ("1 DAY",   mtf_signal(-6),   ema_align_str, f"{rsi-4:.1f}"),
-            ("1 WEEK",  mtf_signal(-12),  "20≈50",       f"{rsi-8:.1f}"),
-        ]
-
-        rows_html = ""
-        for tf, sig, ema_s, rsi_s in mtf_data:
-            trend_icon = "↑" if sig == "BUY" else "↓" if sig == "SELL" else "↔"
-            trend_color = GREEN if sig == "BUY" else RED if sig == "SELL" else YELLOW
-            rows_html += f"""
-            <tr>
-              <td style="color:#64748b;font-family:JetBrains Mono,monospace;font-size:12px;padding:9px 0;">{tf}</td>
-              <td style="text-align:center;"><span style="color:{trend_color};font-size:16px;">{trend_icon}</span></td>
-              <td style="text-align:center;color:#4a6080;font-size:11px;font-family:JetBrains Mono,monospace;">{ema_s}</td>
-              <td style="text-align:center;color:#64748b;font-size:12px;font-family:JetBrains Mono,monospace;">{rsi_s}</td>
-              <td style="text-align:right;">{badge(sig)}</td>
-            </tr>"""
-
-        st.markdown(f"""
-        <div style="background:#0d1520;border:1px solid #1a2d4a;border-radius:14px;padding:20px;">
-          <table style="width:100%;border-collapse:collapse;">
-            <thead>
-              <tr>
-                <th style="font-size:10px;color:#4a6080;letter-spacing:0.1em;text-align:left;padding-bottom:10px;">TIMEFRAME</th>
-                <th style="font-size:10px;color:#4a6080;letter-spacing:0.1em;text-align:center;padding-bottom:10px;">TREND</th>
-                <th style="font-size:10px;color:#4a6080;letter-spacing:0.1em;text-align:center;padding-bottom:10px;">EMA</th>
-                <th style="font-size:10px;color:#4a6080;letter-spacing:0.1em;text-align:center;padding-bottom:10px;">RSI</th>
-                <th style="font-size:10px;color:#4a6080;letter-spacing:0.1em;text-align:right;padding-bottom:10px;">SIGNAL</th>
-              </tr>
-            </thead>
-            <tbody>{rows_html}</tbody>
-          </table>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with regime_col:
-        trend_str = "Strong" if abs(trend_score) > 60 else "Moderate" if abs(trend_score) > 30 else "Weak"
-        vol_regime = "High" if vol_ratio > 1.5 else "Normal" if vol_ratio > 0.8 else "Low"
-        struct = "Bullish" if regime == "BULLISH" else "Bearish" if regime == "BEARISH" else "Ranging"
-        breakout = "Confirmed" if abs(trend_score) > 50 else "Possible" if abs(trend_score) > 30 else "None"
-        mom = "Strong Bullish" if trend_score>60 else "Bullish" if trend_score>30 else "Strong Bearish" if trend_score<-60 else "Bearish" if trend_score<-30 else "Neutral"
-
-        def regime_row(label, val, col="#64748b"):
+        def rg_row(lbl_, v_, c_):
             return f"""
-            <tr style="border-top:1px solid #0f1d2e;">
-              <td style="color:#4a6080;font-size:12px;padding:9px 0;font-weight:500;">{label}</td>
-              <td style="text-align:right;font-size:12px;color:{col};font-weight:600;">{val}</td>
+            <tr style="border-top:1px solid {BORDER};">
+              <td style="font-size:12px;color:{TXT3};padding:8px 0;">{lbl_}</td>
+              <td style="text-align:right;font-size:12px;font-weight:600;color:{c_};">{v_}</td>
             </tr>"""
 
         st.markdown(f"""
-        <div style="background:#0d1520;border:1px solid #1a2d4a;border-radius:14px;padding:20px;">
-          <div style="font-size:10px;color:#4a6080;letter-spacing:0.12em;font-weight:600;margin-bottom:16px;">MARKET REGIME</div>
+        <div style="background:{BG2};border:1px solid {BORDER};border-radius:12px;padding:18px;margin-top:10px;">
           <table style="width:100%;border-collapse:collapse;">
-            {regime_row("TREND STRENGTH", trend_str, GREEN if "Strong" in trend_str else YELLOW)}
-            {regime_row("VOLATILITY", vol_regime, ORANGE)}
-            {regime_row("MARKET STRUCTURE", struct, GREEN if struct=="Bullish" else RED if struct=="Bearish" else YELLOW)}
-            {regime_row("BREAKOUT STATUS", breakout, GREEN if breakout=="Confirmed" else YELLOW)}
-            {regime_row("MOMENTUM", mom, GREEN if "Bull" in mom else RED if "Bear" in mom else YELLOW)}
+            {rg_row("TREND STRENGTH", trend_str, GREEN if "Strong" in trend_str else YELLOW)}
+            {rg_row("VOLATILITY",     vol_regime, ORANGE)}
+            {rg_row("STRUCTURE",      struct,     GREEN if struct=="Bullish" else RED if struct=="Bearish" else YELLOW)}
+            {rg_row("BREAKOUT",       brkout,     GREEN if brkout=="Confirmed" else YELLOW)}
+            {rg_row("MOMENTUM",       mom,        GREEN if "Bull" in mom else RED if "Bear" in mom else YELLOW)}
           </table>
-        </div>
-        """, unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════
+    # MULTI-TIMEFRAME
+    # ═══════════════════════════════════════════════════
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:8px;margin:28px 0 14px;">
+      <div style="width:7px;height:7px;border-radius:50%;background:{ORANGE};box-shadow:0 0 8px {ORANGE}60;"></div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;color:{TXT3};">MULTI-TIMEFRAME ANALYSIS</div>
+      <div style="flex:1;height:1px;background:{BORDER};"></div>
+    </div>""", unsafe_allow_html=True)
+
+    rsi_v2 = float(latest.get("RSI", 50))
+    ema_al = f"{'20>50>200' if e20_v>e50_v else '20<50<200'}"
+    def mtf_sig(noise):
+        s = ts + noise
+        return "BUY" if s>=35 else "SELL" if s<=-35 else "HOLD"
+
+    mtf_rows = [
+        ("15 MIN", mtf_sig(+5),  ema_al, f"{rsi_v2+2:.1f}"),
+        ("1 HOUR", cls_sig,      ema_al, f"{rsi_v2:.1f}"),
+        ("4 HOUR", mtf_sig(-3),  ema_al, f"{rsi_v2-2:.1f}"),
+        ("1 DAY",  mtf_sig(-6),  ema_al, f"{rsi_v2-4:.1f}"),
+        ("1 WEEK", mtf_sig(-12), "20≈50",f"{rsi_v2-8:.1f}"),
+    ]
+
+    def bsig(s):
+        c = GREEN if s=="BUY" else RED if s=="SELL" else YELLOW
+        bg = f"{c}18"; border = f"{c}30"
+        return f'<span style="display:inline-block;padding:2px 10px;border-radius:6px;font-size:11px;font-weight:700;background:{bg};color:{c};border:1px solid {border};">{s}</span>'
+
+    tbody = ""
+    for tf_, sig_, ema_, rsi_ in mtf_rows:
+        arr_col = GREEN if sig_=="BUY" else RED if sig_=="SELL" else YELLOW
+        arr = "↑" if sig_=="BUY" else "↓" if sig_=="SELL" else "↔"
+        tbody += f"""
+        <tr style="border-top:1px solid {BORDER};">
+          <td style="font-size:12px;font-family:JetBrains Mono,monospace;color:{TXT2};padding:10px 0;">{tf_}</td>
+          <td style="text-align:center;"><span style="color:{arr_col};font-size:18px;">{arr}</span></td>
+          <td style="text-align:center;font-size:11px;font-family:JetBrains Mono,monospace;color:{TXT3};">{ema_}</td>
+          <td style="text-align:center;font-size:12px;font-family:JetBrains Mono,monospace;color:{TXT2};">{rsi_}</td>
+          <td style="text-align:right;">{bsig(sig_)}</td>
+        </tr>"""
+
+    st.markdown(f"""
+    <div style="background:{BG2};border:1px solid {BORDER};border-radius:12px;padding:20px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="font-size:10px;color:{TXT3};letter-spacing:0.1em;text-align:left;padding-bottom:10px;">TIMEFRAME</th>
+            <th style="font-size:10px;color:{TXT3};letter-spacing:0.1em;text-align:center;padding-bottom:10px;">TREND</th>
+            <th style="font-size:10px;color:{TXT3};letter-spacing:0.1em;text-align:center;padding-bottom:10px;">EMA</th>
+            <th style="font-size:10px;color:{TXT3};letter-spacing:0.1em;text-align:center;padding-bottom:10px;">RSI</th>
+            <th style="font-size:10px;color:{TXT3};letter-spacing:0.1em;text-align:right;padding-bottom:10px;">SIGNAL</th>
+          </tr>
+        </thead>
+        <tbody>{tbody}</tbody>
+      </table>
+    </div>""", unsafe_allow_html=True)
+
+    # ═══════════════════════════════════════════════════
     # SUPPORT & RESISTANCE + TRADING SETUP
-    # ══════════════════════════════════════════════════════════════
-    section("SUPPORT  &  RESISTANCE  ·  TRADING SETUP")
-    sr_col, setup_col = st.columns([1.2, 1])
+    # ═══════════════════════════════════════════════════
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:8px;margin:28px 0 14px;">
+      <div style="width:7px;height:7px;border-radius:50%;background:{ORANGE};box-shadow:0 0 8px {ORANGE}60;"></div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;color:{TXT3};">SUPPORT & RESISTANCE · TRADING SETUP</div>
+      <div style="flex:1;height:1px;background:{BORDER};"></div>
+    </div>""", unsafe_allow_html=True)
+
+    sr_col, ts_col = st.columns([1.2, 1])
 
     with sr_col:
-        atr_v2 = float(latest.get("ATR", current_price * 0.02))
-        r1 = float(df["High"].tail(50).max())
-        r2 = float(df["High"].tail(20).max())
-        r3 = r1 + atr_v2
-        s1 = float(df["Low"].tail(50).min())
-        s2 = float(df["Low"].tail(20).min())
-        s3 = s1 - atr_v2
+        atr_v3 = float(latest.get("ATR", cur_price*0.02))
+        r1_ = float(df["High"].tail(50).max())
+        r2_ = float(df["High"].tail(20).max())
+        r3_ = r1_ + atr_v3
+        s1_ = float(df["Low"].tail(50).min())
+        s2_ = float(df["Low"].tail(20).min())
+        s3_ = s1_ - atr_v3
 
-        def sr_row(label, price, strength_dots, color):
-            inr = price * inr_rate
+        def dots_html(n, col):
+            return "".join([f'<span style="color:{col};font-size:13px;">●</span>' for _ in range(n)])
+
+        def sr_row(lbl_, price_, n_dots, col_):
             return f"""
-            <tr style="border-top:1px solid #0f1d2e;">
-              <td style="font-size:12px;color:{color};font-weight:600;padding:8px 0;">{label}</td>
-              <td style="text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;color:#f1f5f9;">${price:.4f}</td>
-              <td style="text-align:center;font-family:JetBrains Mono,monospace;font-size:11px;color:#4a6080;">₹{inr:,.2f}</td>
-              <td style="text-align:right;">{strength_dots}</td>
+            <tr style="border-top:1px solid {BORDER};">
+              <td style="font-size:12px;color:{col_};font-weight:600;padding:9px 0;">{lbl_}</td>
+              <td style="text-align:center;font-family:JetBrains Mono,monospace;font-size:12px;color:#f0f6fc;">${price_:.4f}</td>
+              <td style="text-align:center;font-family:JetBrains Mono,monospace;font-size:11px;color:{TXT3};">₹{price_*inr_rate:,.2f}</td>
+              <td style="text-align:right;">{dots_html(n_dots, col_)}</td>
             </tr>"""
 
-        def dots(n, color):
-            return "".join([f"<span style='color:{color};font-size:14px;'>●</span>" for _ in range(n)])
-
         st.markdown(f"""
-        <div style="background:#0d1520;border:1px solid #1a2d4a;border-radius:14px;padding:20px;">
+        <div style="background:{BG2};border:1px solid {BORDER};border-radius:12px;padding:20px;">
           <table style="width:100%;border-collapse:collapse;">
             <thead>
               <tr>
-                <th style="font-size:10px;color:#4a6080;letter-spacing:0.1em;text-align:left;padding-bottom:10px;">LEVEL</th>
-                <th style="font-size:10px;color:#4a6080;letter-spacing:0.1em;text-align:center;padding-bottom:10px;">USD</th>
-                <th style="font-size:10px;color:#4a6080;letter-spacing:0.1em;text-align:center;padding-bottom:10px;">INR</th>
-                <th style="font-size:10px;color:#4a6080;letter-spacing:0.1em;text-align:right;padding-bottom:10px;">STRENGTH</th>
+                <th style="font-size:10px;color:{TXT3};letter-spacing:0.1em;text-align:left;padding-bottom:10px;">LEVEL</th>
+                <th style="font-size:10px;color:{TXT3};letter-spacing:0.1em;text-align:center;padding-bottom:10px;">USD</th>
+                <th style="font-size:10px;color:{TXT3};letter-spacing:0.1em;text-align:center;padding-bottom:10px;">INR</th>
+                <th style="font-size:10px;color:{TXT3};letter-spacing:0.1em;text-align:right;padding-bottom:10px;">STRENGTH</th>
               </tr>
             </thead>
             <tbody>
-              {sr_row("RESISTANCE 3", r3, dots(3,RED), RED)}
-              {sr_row("RESISTANCE 2", r1, dots(4,RED), RED)}
-              {sr_row("RESISTANCE 1", r2, dots(5,RED), RED)}
-              <tr style="border-top:1px dashed #1a2d4a;">
-                <td colspan="4" style="text-align:center;color:#3b82f6;font-size:12px;font-family:JetBrains Mono,monospace;padding:6px 0;font-weight:700;">
-                  ── CURRENT  ${current_price:.4f}  ·  ₹{price_inr:,.2f} ──
+              {sr_row("RESISTANCE 3", r3_, 3, RED)}
+              {sr_row("RESISTANCE 2", r1_, 4, RED)}
+              {sr_row("RESISTANCE 1", r2_, 5, RED)}
+              <tr>
+                <td colspan="4" style="text-align:center;color:{BLUE};font-size:12px;
+                     font-family:JetBrains Mono,monospace;padding:8px 0;font-weight:700;
+                     border-top:1px dashed {BORDER};">
+                  ── CURRENT ${cur_price:.4f} · ₹{price_inr:,.2f} ──
                 </td>
               </tr>
-              {sr_row("SUPPORT 1",    s2, dots(5,GREEN), GREEN)}
-              {sr_row("SUPPORT 2",    s1, dots(4,GREEN), GREEN)}
-              {sr_row("SUPPORT 3",    s3, dots(3,GREEN), GREEN)}
+              {sr_row("SUPPORT 1", s2_, 5, GREEN)}
+              {sr_row("SUPPORT 2", s1_, 4, GREEN)}
+              {sr_row("SUPPORT 3", s3_, 3, GREEN)}
             </tbody>
           </table>
-        </div>
-        """, unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
 
-    with setup_col:
-        entry    = current_price
-        sl       = current_price - (atr_v2 * 2)
-        tp1      = current_price + (atr_v2 * 3)
-        tp2      = current_price + (atr_v2 * 6)
-        rr       = (tp1 - entry) / max(entry - sl, 1e-9)
-        entry_inr = entry * inr_rate
-        sl_inr    = sl * inr_rate
-        tp1_inr   = tp1 * inr_rate
-        tp2_inr   = tp2 * inr_rate
+    with ts_col:
+        entry_ = cur_price
+        sl_    = cur_price - (atr_v3 * 2)
+        tp1_   = cur_price + (atr_v3 * 3)
+        tp2_   = cur_price + (atr_v3 * 6)
+        rr_    = (tp1_ - entry_) / max(entry_ - sl_, 1e-9)
 
-        def setup_row(label, usd_val, inr_val, cls=""):
+        def setup_row(lbl_, usd_, inr_, col_):
             return f"""
-            <tr style="border-top:1px solid #0f1d2e;">
-              <td style="font-size:12px;color:#4a6080;font-weight:500;padding:9px 0;">{label}</td>
-              <td style="text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;" class="{cls}">
-                <span style="color:{'#3b82f6' if cls=='entry-val' else '#22c55e' if 'tp' in cls else '#ef4444' if 'sl' in cls else '#f1f5f9'}">${usd_val:.4f}</span><br>
-                <span style="font-size:10px;color:#4a6080;">₹{inr_val:,.2f}</span>
+            <tr style="border-top:1px solid {BORDER};">
+              <td style="font-size:12px;color:{TXT3};font-weight:500;padding:10px 0;">{lbl_}</td>
+              <td style="text-align:right;padding:10px 0;">
+                <div style="font-size:13px;font-weight:700;font-family:JetBrains Mono,monospace;color:{col_};">${usd_:.4f}</div>
+                <div style="font-size:10px;font-family:JetBrains Mono,monospace;color:{TXT3};">₹{inr_:,.2f}</div>
               </td>
             </tr>"""
 
         st.markdown(f"""
-        <div style="background:#0d1520;border:1px solid #1a2d4a;border-radius:14px;padding:20px;height:100%;">
-          <div style="font-size:10px;color:#4a6080;letter-spacing:0.12em;font-weight:600;margin-bottom:16px;">TRADING SETUP</div>
+        <div style="background:{BG2};border:1px solid {BORDER};border-radius:12px;padding:20px;">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;color:{TXT3};margin-bottom:16px;">TRADING SETUP</div>
           <table style="width:100%;border-collapse:collapse;">
-            {setup_row("ENTRY PRICE", entry, entry_inr, "entry-val")}
-            {setup_row("STOP LOSS  (2×ATR)", sl, sl_inr, "sl")}
-            {setup_row("TAKE PROFIT 1  (3×ATR)", tp1, tp1_inr, "tp")}
-            {setup_row("TAKE PROFIT 2  (6×ATR)", tp2, tp2_inr, "tp")}
-            <tr style="border-top:1px solid #1a2d4a;">
-              <td style="font-size:12px;color:#4a6080;font-weight:500;padding:9px 0;">RISK / REWARD</td>
-              <td style="text-align:right;font-family:JetBrains Mono,monospace;font-size:15px;font-weight:700;color:#f97316;">1 : {rr:.2f}</td>
+            {setup_row("ENTRY PRICE",      entry_, entry_*inr_rate, BLUE)}
+            {setup_row("STOP LOSS (2×ATR)",sl_,    sl_*inr_rate,    RED)}
+            {setup_row("TAKE PROFIT 1 (3×ATR)", tp1_, tp1_*inr_rate, GREEN)}
+            {setup_row("TAKE PROFIT 2 (6×ATR)", tp2_, tp2_*inr_rate, GREEN)}
+            <tr style="border-top:1px solid {BORDER};">
+              <td style="font-size:12px;color:{TXT3};padding:10px 0;">RISK / REWARD</td>
+              <td style="text-align:right;font-size:18px;font-weight:800;
+                   font-family:JetBrains Mono,monospace;color:{ORANGE};padding:10px 0;">1 : {rr_:.2f}</td>
             </tr>
-            <tr>
-              <td style="font-size:12px;color:#4a6080;font-weight:500;padding:9px 0;">ATR (14)</td>
-              <td style="text-align:right;font-family:JetBrains Mono,monospace;font-size:13px;color:#64748b;">${atr_v2:.4f}  ·  ₹{atr_v2*inr_rate:.2f}</td>
+            <tr style="border-top:1px solid {BORDER};">
+              <td style="font-size:12px;color:{TXT3};padding:10px 0;">ATR (14)</td>
+              <td style="text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;color:{TXT2};padding:10px 0;">
+                ${atr_v3:.4f} · ₹{atr_v3*inr_rate:.2f}
+              </td>
             </tr>
           </table>
-          <div style="margin-top:16px;padding:12px;background:#0a1320;border-radius:10px;border:1px solid #0f1d2e;">
-            <div style="font-size:10px;color:#4a6080;margin-bottom:6px;letter-spacing:0.08em;">RISK WARNING</div>
-            <div style="font-size:11px;color:#334155;line-height:1.6;">
-              This is informational only. Not financial advice. Crypto assets are highly volatile. Always do your own research.
+          <div style="margin-top:14px;padding:12px;background:{BG3};border-radius:8px;border:1px solid {BORDER};">
+            <div style="font-size:10px;color:{TXT3};margin-bottom:4px;letter-spacing:0.08em;">RISK WARNING</div>
+            <div style="font-size:11px;color:#484f58;line-height:1.6;">
+              Informational only. Not financial advice. Crypto is highly volatile. DYOR.
             </div>
           </div>
-        </div>
-        """, unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
 
-    # ══════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════
     # FOOTER
-    # ══════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════
     st.markdown(f"""
-    <div class="footer">
-      RENDER AI DASHBOARD  ·  Data: CoinGecko · Yahoo Finance · TradingView  ·  
-      INR Rate: ₹{inr_rate:.2f}  ·  
-      Updated: {datetime.now().strftime("%d %b %Y  %H:%M:%S")}  ·  
+    <div style="text-align:center;font-size:10px;color:{TXT3};margin-top:40px;
+         padding-top:16px;border-top:1px solid {BORDER};letter-spacing:0.04em;">
+      RENDER AI DASHBOARD · Data: CoinGecko · Yahoo Finance · TradingView ·
+      INR: ₹{inr_rate:.2f} · {datetime.now().strftime("%d %b %Y %H:%M:%S")} ·
       Not financial advice
-    </div>
-    """, unsafe_allow_html=True)
+    </div>""", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
