@@ -10,3 +10,4 @@ lightgbm
 joblib
 requests
 python-telegram-bot
+matplotlib
