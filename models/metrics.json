@@ -1,0 +1,44 @@
+{
+  "threshold": 0.7,
+  "risk_multiplier": 1.0,
+  "holdout": [
+    {
+      "n_trades": 36,
+      "win_rate": 0.8055555555555556,
+      "profit_factor": 7.513703203019236,
+      "sharpe": 2.6021506410981945,
+      "max_drawdown": -0.006731770379319857,
+      "threshold_used": 0.7,
+      "cost": 0.0
+    },
+    {
+      "n_trades": 36,
+      "win_rate": 0.8055555555555556,
+      "profit_factor": 7.391293251058238,
+      "sharpe": 2.580346446617859,
+      "max_drawdown": -0.006798098517847156,
+      "threshold_used": 0.7,
+      "cost": 0.0005
+    },
+    {
+      "n_trades": 36,
+      "win_rate": 0.8055555555555556,
+      "profit_factor": 7.271427527660556,
+      "sharpe": 2.5585422521375207,
+      "max_drawdown": -0.006864423334390591,
+      "threshold_used": 0.7,
+      "cost": 0.001
+    },
+    {
+      "n_trades": 36,
+      "win_rate": 0.8055555555555556,
+      "profit_factor": 7.0390179438701175,
+      "sharpe": 2.5149338631768474,
+      "max_drawdown": -0.006997063001968128,
+      "threshold_used": 0.7,
+      "cost": 0.002
+    }
+  ],
+  "regression_mae": 2.3998097371671987,
+  "regression_rmse": 2.7250154658602543
+}
